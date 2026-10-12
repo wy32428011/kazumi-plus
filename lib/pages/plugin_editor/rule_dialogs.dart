@@ -272,7 +272,14 @@ class _RuleUrlImportDialogState extends State<_RuleUrlImportDialog> {
         }
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() {
+          // 下载服务已提供安全原因；不显示异常类名、响应原文或网络凭据。
+          _error = error is FormatException && error.message.trim().isNotEmpty
+              ? error.message
+              : '规则下载失败，请检查网络、网址或文件格式后重试。';
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
