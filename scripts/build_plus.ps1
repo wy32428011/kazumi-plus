@@ -101,9 +101,9 @@ New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
 $outputRelativePath = switch ($Target) {
     'WindowsDebug' { 'build/windows/x64/runner/Debug' }
     'WindowsRelease' { 'build/windows/x64/runner/Release' }
-    'AndroidDebug' { 'build/app/outputs/flutter-apk/app-mobile-x86_64-debug.apk' }
-    'AndroidRelease' { 'build/app/outputs/flutter-apk/app-mobile-arm64-v8a-release.apk' }
-    'AndroidTvDebug' { 'build/app/outputs/flutter-apk/app-tv-x86_64-debug.apk' }
+    'AndroidDebug' { 'build/app/outputs/flutter-apk/app-x86_64-mobile-debug.apk' }
+    'AndroidRelease' { 'build/app/outputs/flutter-apk/app-arm64-v8a-mobile-release.apk' }
+    'AndroidTvDebug' { 'build/app/outputs/flutter-apk/app-x86_64-tv-debug.apk' }
     'AndroidTvRelease' { 'build/app/outputs/flutter-apk/app-tv-release.apk' }
 }
 $outputPath = [IO.Path]::GetFullPath((Join-Path $projectRoot $outputRelativePath))
@@ -198,9 +198,9 @@ try {
     }
     # 保留原手机端产物别名，现有文档和外部安装流程无需因 flavor 切换而失效。
     if ($Target -eq 'AndroidDebug') {
-        Copy-Item -LiteralPath 'build/app/outputs/flutter-apk/app-mobile-x86_64-debug.apk' -Destination 'build/app/outputs/flutter-apk/app-x86_64-debug.apk' -Force
+        Copy-Item -LiteralPath $outputPath -Destination 'build/app/outputs/flutter-apk/app-x86_64-debug.apk' -Force
     } elseif ($Target -eq 'AndroidRelease') {
-        Copy-Item -LiteralPath 'build/app/outputs/flutter-apk/app-mobile-arm64-v8a-release.apk' -Destination 'build/app/outputs/flutter-apk/app-arm64-v8a-release.apk' -Force
+        Copy-Item -LiteralPath $outputPath -Destination 'build/app/outputs/flutter-apk/app-arm64-v8a-release.apk' -Force
     }
     $outputFiles = if ($Target.StartsWith('Windows')) { @(Get-ChildItem -LiteralPath $outputPath -Recurse -File | Where-Object Extension -ne '.pdb') } else { @(Get-Item -LiteralPath $outputPath) }
     $artifactRecords = @(foreach ($artifact in $outputFiles) {

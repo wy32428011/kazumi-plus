@@ -155,7 +155,7 @@ jobs:
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
           $target = if ($env:PLUS_FLAVOR -eq 'tv') { 'AndroidTvRelease' } else { 'AndroidRelease' }
           ./scripts/build_plus.ps1 -Target $target
-          $sourceApk = if ($env:PLUS_FLAVOR -eq 'tv') { 'build/app/outputs/flutter-apk/app-tv-release.apk' } else { 'build/app/outputs/flutter-apk/app-mobile-arm64-v8a-release.apk' }
+          $sourceApk = if ($env:PLUS_FLAVOR -eq 'tv') { 'build/app/outputs/flutter-apk/app-tv-release.apk' } else { 'build/app/outputs/flutter-apk/app-arm64-v8a-mobile-release.apk' }
           $outputDirectory = "dist/ci/android-$env:PLUS_FLAVOR"
           New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
           Copy-Item -LiteralPath $sourceApk -Destination "$outputDirectory/Kazumi-Plus-$env:PLUS_FLAVOR.apk"
