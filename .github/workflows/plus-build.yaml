@@ -1,0 +1,264 @@
+name: Kazumi Plus manual build
+run-name: Plus ${{ inputs.target }} / ${{ inputs.apple_mode }} / ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 构建目标；默认仅准备 Apple 平台
+        type: choice
+        required: true
+        default: apple
+        options: [apple, macos, ios, windows, android-mobile, android-tv, all]
+      apple_mode:
+        description: bootstrap 仅生成真实依赖锁，提交后再选择 build
+        type: choice
+        required: true
+        default: bootstrap
+        options: [bootstrap, build]
+
+# 仅上传本次任务 Artifacts，不创建 Release、不推送源码、不使用上游发布密钥。
+permissions:
+  contents: read
+concurrency:
+  group: plus-${{ github.ref }}-${{ inputs.target }}-${{ inputs.apple_mode }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.47.7'
+  FLUTTER_FRAMEWORK_REVISION: abaf9c523780a608bd46686fd5e53740a07077f8
+
+jobs:
+  windows:
+    if: inputs.target == 'windows' || inputs.target == 'all'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require independent clean source
+        shell: pwsh
+        run: |
+          if ('${{ github.repository }}' -eq 'Predidit/Kazumi') { throw 'Plus workflow cannot run against the upstream release repository.' }
+          if (@(git status --porcelain=v1).Count) { throw 'Checkout is dirty.' }
+          git rev-parse HEAD
+      - name: Install frozen Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Build Windows from this commit
+        shell: pwsh
+        run: |
+          $version = flutter --version --machine | ConvertFrom-Json
+          if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
+          ./scripts/build_plus.ps1 -Target WindowsRelease
+          New-Item -ItemType Directory -Path dist/ci/windows -Force | Out-Null
+          $bundle = (Resolve-Path 'build/windows/x64/runner/Release').Path
+          $staging = Join-Path $env:RUNNER_TEMP 'plus-windows-package'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          foreach ($file in Get-ChildItem $bundle -Recurse -File | Where-Object Extension -ne '.pdb') {
+            $destination = Join-Path $staging ([IO.Path]::GetRelativePath($bundle, $file.FullName))
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+          }
+          Copy-Item -LiteralPath LICENSE -Destination (Join-Path $staging 'LICENSE')
+          Compress-Archive -Path "$staging/*" -DestinationPath 'dist/ci/windows/Kazumi-Plus-windows-x64.zip'
+          $hash = (Get-FileHash 'dist/ci/windows/Kazumi-Plus-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Kazumi-Plus-windows-x64.zip" | Set-Content dist/ci/windows/SHA256SUMS.txt
+      - name: Upload build and provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plus-windows-${{ github.run_id }}
+          path: |
+            dist/ci/windows/
+            .tools/logs/build-WindowsRelease-*.log
+            .tools/logs/evidence-WindowsRelease-*/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: warn
+
+  android:
+    if: inputs.target == 'android-mobile' || inputs.target == 'android-tv' || inputs.target == 'all'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: ${{ fromJSON(inputs.target == 'android-mobile' && '["mobile"]' || inputs.target == 'android-tv' && '["tv"]' || '["mobile","tv"]') }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require independent clean source
+        shell: bash
+        run: |
+          test "$GITHUB_REPOSITORY" != 'Predidit/Kazumi'
+          test -z "$(git status --porcelain=v1)"
+          git rev-parse HEAD
+      - name: Install frozen JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17.0.18+8'
+      - name: Install frozen Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Restore existing mobile debug identity
+        if: matrix.flavor == 'mobile'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KAZUMI_MOBILE_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          : "${KEYSTORE_BASE64:?Configure KAZUMI_MOBILE_DEBUG_KEYSTORE_BASE64 to preserve the existing mobile identity.}"
+          umask 077
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+      - name: Restore dedicated TV release identity
+        if: matrix.flavor == 'tv'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KAZUMI_TV_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.KAZUMI_TV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KAZUMI_TV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KAZUMI_TV_KEY_PASSWORD }}
+        run: |
+          : "${KEYSTORE_BASE64:?Missing dedicated TV keystore.}"
+          : "${STORE_PASSWORD:?Missing TV store password.}"
+          : "${KEY_ALIAS:?Missing TV alias.}"
+          : "${KEY_PASSWORD:?Missing TV key password.}"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kazumi-plus-tv.p12"
+          echo "KAZUMI_TV_KEYSTORE_PATH=$RUNNER_TEMP/kazumi-plus-tv.p12" >> "$GITHUB_ENV"
+      - name: Build signed Android artifact
+        shell: pwsh
+        env:
+          PLUS_FLAVOR: ${{ matrix.flavor }}
+          KAZUMI_TV_KEYSTORE_PASSWORD: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEYSTORE_PASSWORD || '' }}
+          KAZUMI_TV_KEY_ALIAS: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEY_ALIAS || '' }}
+          KAZUMI_TV_KEY_PASSWORD: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEY_PASSWORD || '' }}
+        run: |
+          $version = flutter --version --machine | ConvertFrom-Json
+          if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
+          $target = if ($env:PLUS_FLAVOR -eq 'tv') { 'AndroidTvRelease' } else { 'AndroidRelease' }
+          ./scripts/build_plus.ps1 -Target $target
+          $sourceApk = if ($env:PLUS_FLAVOR -eq 'tv') { 'build/app/outputs/flutter-apk/app-tv-release.apk' } else { 'build/app/outputs/flutter-apk/app-mobile-arm64-v8a-release.apk' }
+          $outputDirectory = "dist/ci/android-$env:PLUS_FLAVOR"
+          New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+          Copy-Item -LiteralPath $sourceApk -Destination "$outputDirectory/Kazumi-Plus-$env:PLUS_FLAVOR.apk"
+          $hash = (Get-FileHash "$outputDirectory/Kazumi-Plus-$env:PLUS_FLAVOR.apk" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Kazumi-Plus-$env:PLUS_FLAVOR.apk" | Set-Content "$outputDirectory/SHA256SUMS.txt"
+      - name: Upload APK and provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plus-android-${{ matrix.flavor }}-${{ github.run_id }}
+          path: |
+            dist/ci/android-${{ matrix.flavor }}/
+            .tools/logs/build-Android*.log
+            .tools/logs/evidence-Android*/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: warn
+
+  apple:
+    if: inputs.target == 'apple' || inputs.target == 'macos' || inputs.target == 'ios' || inputs.target == 'all'
+    runs-on: macos-15
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(inputs.target == 'macos' && '["macos"]' || inputs.target == 'ios' && '["ios"]' || '["macos","ios"]') }}
+    env:
+      XCODE_VERSION: '26.3'
+      PLUS_APPLE_PLATFORM: ${{ matrix.platform }}
+      PLUS_APPLE_MODE: ${{ inputs.apple_mode }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require independent clean source and fixed Xcode
+        shell: bash
+        run: |
+          test "$GITHUB_REPOSITORY" != 'Predidit/Kazumi'
+          test -z "$(git status --porcelain=v1)"
+          test -d "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          echo "DEVELOPER_DIR=/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer" >> "$GITHUB_ENV"
+          git rev-parse HEAD
+      - name: Install frozen Ruby
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
+        with:
+          ruby-version: '3.3.8'
+          bundler-cache: false
+      - name: Install frozen Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Install isolated native build tools
+        shell: bash
+        run: |
+          export GEM_HOME="$RUNNER_TEMP/kazumi-apple-gems"
+          export GEM_PATH="$GEM_HOME"
+          mkdir -p "$GEM_HOME/bin"
+          gem install xcodeproj -v 1.27.0 --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin"
+          gem install cocoapods -v 1.16.2 --conservative --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin"
+          echo "GEM_HOME=$GEM_HOME" >> "$GITHUB_ENV"
+          echo "GEM_PATH=$GEM_PATH" >> "$GITHUB_ENV"
+          echo "$GEM_HOME/bin" >> "$GITHUB_PATH"
+          python3 -m venv "$RUNNER_TEMP/kazumi-apple-tools"
+          "$RUNNER_TEMP/kazumi-apple-tools/bin/python" -m pip install --only-binary=:all: 'cmake==3.31.6' 'ninja==1.11.1.4'
+          echo "$RUNNER_TEMP/kazumi-apple-tools/bin" >> "$GITHUB_PATH"
+      - name: Bootstrap locks or build Apple artifact
+        shell: bash
+        run: |
+          output="dist/apple/$PLUS_APPLE_PLATFORM"
+          if [[ "$PLUS_APPLE_MODE" == 'bootstrap' ]]; then
+            set +e
+            bash scripts/build_apple.sh "$PLUS_APPLE_PLATFORM" --bootstrap-pods
+            result=$?
+            set -e
+            if [[ "$result" -ne 78 ]]; then
+              if [[ "$result" -eq 0 ]]; then
+                echo 'Bootstrap unexpectedly returned build-success; refusing to treat it as dependency preparation.' >&2
+                exit 1
+              fi
+              exit "$result"
+            fi
+            python3 - "$output/result.json" <<'PY'
+          import json, sys
+          result = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert result['status'] == 'dependency_locks_generated_pending_freeze', result.get('status')
+          PY
+            echo '### Apple dependency locks generated; commit the reviewed lock/source changes, then run build mode.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'This bootstrap run did not build an application.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$PLUS_APPLE_MODE" == 'build' ]]; then
+            bash scripts/build_apple.sh "$PLUS_APPLE_PLATFORM"
+          else
+            echo 'Unknown Apple mode.' >&2
+            exit 2
+          fi
+      - name: Upload Apple result and evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plus-${{ matrix.platform }}-${{ inputs.apple_mode }}-${{ github.run_id }}
+          path: dist/apple/${{ matrix.platform }}/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: warn

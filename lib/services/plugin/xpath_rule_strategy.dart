@@ -18,6 +18,7 @@ enum XPathRuleField {
   searchName,
   searchResult,
   chapterRoads,
+  chapterRoadName,
   chapterResult,
   captchaDetectValue,
   captchaImage,
@@ -197,9 +198,15 @@ class XPathRuleStrategy {
           diagnostics.add('线路 $roadIndex 没有有效剧集，已跳过');
           continue;
         }
+        // 新规则可保留源站线路名称，旧规则继续使用原来的展示回退。
+        final roadName = config.chapterRoadName.isEmpty ? '' : _runSelector(
+          XPathRuleField.chapterRoadName,
+          config.chapterRoadName,
+          () => roadNode.queryXPath(config.chapterRoadName).node,
+        )?.text?.trim() ?? '';
         roads.add(
           Road(
-            name: '播放线路${roads.length + 1}',
+            name: roadName.isEmpty ? '播放线路${roads.length + 1}' : roadName,
             data: urls,
             identifier: names,
           ),
@@ -320,6 +327,7 @@ class XPathRuleStrategy {
       XPathRuleField.searchName => '条目名称',
       XPathRuleField.searchResult => '条目链接',
       XPathRuleField.chapterRoads => '播放线路列表',
+      XPathRuleField.chapterRoadName => '播放线路名称',
       XPathRuleField.chapterResult => '剧集列表',
       XPathRuleField.captchaDetectValue => '验证页检测',
       XPathRuleField.captchaImage => '验证码图片',

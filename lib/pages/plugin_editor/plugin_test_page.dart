@@ -9,6 +9,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
+import 'package:kazumi/pages/plugin_editor/catalog_rule_preview.dart';
 import 'package:kazumi/plugins/api_rule_config.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/services/logging/logger.dart';
@@ -174,6 +175,10 @@ class _PluginTestPageState extends State<PluginTestPage> {
                     icon: Icons.science_outlined,
                   ),
                   const SizedBox(height: 20),
+                  if (plugin.catalog != null) ...[
+                    CatalogRulePreview(plugin: plugin),
+                    const SizedBox(height: 20),
+                  ],
                   RuleSection(
                     title: '试着搜索一部番剧',
                     description: '选集测试会使用第一条搜索结果。',

@@ -23,7 +23,7 @@ class PluginSearchService {
 
   Future<void> querySource(String keyword, String pluginName) async {
     for (final plugin in pluginsController.pluginList) {
-      if (plugin.name == pluginName) {
+      if (plugin.name == pluginName && _supportsAnime(plugin)) {
         infoController.pluginSearchResponseList.removeWhere(
           (response) => response.pluginName == pluginName,
         );
@@ -41,7 +41,7 @@ class PluginSearchService {
   bool applyHarvestedSearchResult(String pluginName, String html) {
     if (_isCancelled) return false;
     for (final plugin in pluginsController.pluginList) {
-      if (plugin.name != pluginName) continue;
+      if (plugin.name != pluginName || !_supportsAnime(plugin)) continue;
       final result = plugin.parseHarvestedSearch(html);
       if (result == null) return false;
       infoController.pluginSearchResponseList.removeWhere(
@@ -60,14 +60,12 @@ class PluginSearchService {
     infoController.pluginSearchResponseList.clear();
     infoController.pluginSearchStatus.clear();
 
-    final plugins = List<Plugin>.of(pluginsController.pluginList);
+    final plugins = pluginsController.pluginList.where(_supportsAnime).toList();
     for (final plugin in plugins) {
       infoController.pluginSearchStatus[plugin.name] =
           PluginSearchStatus.pending;
     }
-    await Future.wait(
-      plugins.map((plugin) => _queryPlugin(plugin, keyword)),
-    );
+    await Future.wait(plugins.map((plugin) => _queryPlugin(plugin, keyword)));
   }
 
   Future<void> _queryPlugin(Plugin plugin, String keyword) async {
@@ -93,6 +91,10 @@ class PluginSearchService {
       _handleSearchError(plugin, error);
     }
   }
+
+  // 影视规则不会进入原动漫搜索及其验证码重试路径。
+  bool _supportsAnime(Plugin plugin) =>
+      plugin.enabled && plugin.supportedMediaTypes.contains('anime');
 
   void _handleSearchError(Plugin plugin, Object error) {
     if (error is CaptchaRequiredException) {

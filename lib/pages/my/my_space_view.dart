@@ -3,7 +3,10 @@ import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
+import 'package:kazumi/modules/media/media_models.dart';
+import 'package:kazumi/services/media/source_media_library.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
+import 'package:kazumi/television/tv_focus.dart';
 
 enum MyDestination {
   theme,
@@ -19,47 +22,102 @@ enum MyDestination {
 
 const _tileRadius = BorderRadius.all(Radius.circular(28));
 
+/// 影视按来源历史条目计数，不混入原动漫集数或推算累计观看时长。
+class _SourceFootprint {
+  const _SourceFootprint({this.tvCount = 0, this.movieCount = 0, this.latest});
+  final int tvCount;
+  final int movieCount;
+  final SourceHistory? latest;
+  int get total => tvCount + movieCount;
+
+  factory _SourceFootprint.from(List<SourceHistory> histories) {
+    final seen = <String>{};
+    var tvCount = 0;
+    var movieCount = 0;
+    SourceHistory? latest;
+    for (final history in histories) {
+      if (!seen.add(history.media.ref.key)) continue;
+      switch (history.media.ref.kind) {
+        case MediaKind.tv:
+          tvCount++;
+        case MediaKind.movie:
+          movieCount++;
+        case MediaKind.anime:
+          continue;
+      }
+      if (latest == null || history.updatedAt.isAfter(latest.updatedAt)) {
+        latest = history;
+      }
+    }
+    return _SourceFootprint(
+      tvCount: tvCount,
+      movieCount: movieCount,
+      latest: latest,
+    );
+  }
+
+  String historyCaption(WatchStats anime) {
+    if (total > 0) return '动漫 ${anime.watchedBangumiCount} · 影视 $total';
+    return anime.watchedBangumiCount == 0 ? '暂无观看记录' : '查看观看记录';
+  }
+}
+
 class MySpaceView extends StatelessWidget {
   const MySpaceView({
     super.key,
     required this.stats,
     required this.onOpen,
+    this.sourceHistories = const [],
   });
 
   final WatchStats stats;
+  final List<SourceHistory> sourceHistories;
   final ValueChanged<MyDestination> onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final inset = constraints.maxWidth < 600 ? 16.0 : 32.0;
-      final width = constraints.maxWidth - inset * 2;
-      final largeText = MediaQuery.textScalerOf(context).scale(16) > 24;
-      final wide = width >= 840 && !largeText;
-      return SingleChildScrollView(
-        key: const PageStorageKey('my-space'),
-        padding: EdgeInsets.fromLTRB(inset, 12, inset, 32),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1120),
-            child: wide
-                ? _WideSpaceLayout(stats: stats, onOpen: onOpen)
-                : _CompactSpaceLayout(
-                    stats: stats,
-                    onOpen: onOpen,
-                    stackTools: width < 280 || largeText,
-                  ),
+    final source = _SourceFootprint.from(sourceHistories);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final inset = constraints.maxWidth < 600 ? 16.0 : 32.0;
+        final width = constraints.maxWidth - inset * 2;
+        final largeText = MediaQuery.textScalerOf(context).scale(16) > 24;
+        final wide = width >= 840 && !largeText;
+        return SingleChildScrollView(
+          key: const PageStorageKey('my-space'),
+          padding: EdgeInsets.fromLTRB(inset, 12, inset, 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1120),
+              child: wide
+                  ? _WideSpaceLayout(
+                      stats: stats,
+                      source: source,
+                      onOpen: onOpen,
+                    )
+                  : _CompactSpaceLayout(
+                      stats: stats,
+                      source: source,
+                      onOpen: onOpen,
+                      stackTools: width < 280 || largeText,
+                    ),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
 class _WideSpaceLayout extends StatelessWidget {
-  const _WideSpaceLayout({required this.stats, required this.onOpen});
+  const _WideSpaceLayout({
+    required this.stats,
+    required this.source,
+    required this.onOpen,
+  });
 
   final WatchStats stats;
+  final _SourceFootprint source;
   final ValueChanged<MyDestination> onOpen;
 
   @override
@@ -74,6 +132,7 @@ class _WideSpaceLayout extends StatelessWidget {
           second: _WatchStatsPanel(
             bangumiCount: stats.watchedBangumiCount,
             episodeCount: stats.watchedEpisodeCount,
+            source: source,
           ),
         ),
         const SizedBox(height: 28),
@@ -83,7 +142,7 @@ class _WideSpaceLayout extends StatelessWidget {
             first: _ToolTile(
               icon: Icons.history_rounded,
               title: '历史记录',
-              caption: stats.watchedBangumiCount == 0 ? '暂无观看记录' : '查看观看记录',
+              caption: source.historyCaption(stats),
               color: colors.secondaryContainer,
               foreground: colors.onSecondaryContainer,
               onTap: () => onOpen(MyDestination.history),
@@ -150,11 +209,13 @@ class _WideSpaceLayout extends StatelessWidget {
 class _CompactSpaceLayout extends StatelessWidget {
   const _CompactSpaceLayout({
     required this.stats,
+    required this.source,
     required this.onOpen,
     required this.stackTools,
   });
 
   final WatchStats stats;
+  final _SourceFootprint source;
   final ValueChanged<MyDestination> onOpen;
   final bool stackTools;
 
@@ -167,6 +228,7 @@ class _CompactSpaceLayout extends StatelessWidget {
         _WatchStatsPanel(
           bangumiCount: stats.watchedBangumiCount,
           episodeCount: stats.watchedEpisodeCount,
+          source: source,
           compact: true,
         ),
         const SizedBox(height: 12),
@@ -175,7 +237,7 @@ class _CompactSpaceLayout extends StatelessWidget {
           first: _ToolTile(
             icon: Icons.history_rounded,
             title: '历史记录',
-            caption: stats.watchedBangumiCount == 0 ? '暂无观看记录' : '查看观看记录',
+            caption: source.historyCaption(stats),
             color: colors.secondaryContainer,
             foreground: colors.onSecondaryContainer,
             compact: true,
@@ -209,9 +271,15 @@ class _CompactSpaceLayout extends StatelessWidget {
           children: [
             _entry('同步备份', Icons.cloud_sync_rounded, MyDestination.sync),
             _entry(
-                '存储管理', Icons.cleaning_services_rounded, MyDestination.storage),
+              '存储管理',
+              Icons.cleaning_services_rounded,
+              MyDestination.storage,
+            ),
             _entry(
-                '关于 Kazumi', Icons.info_outline_rounded, MyDestination.about),
+              '关于 Kazumi',
+              Icons.info_outline_rounded,
+              MyDestination.about,
+            ),
           ],
         ),
       ],
@@ -231,11 +299,13 @@ class _WatchStatsPanel extends StatelessWidget {
   const _WatchStatsPanel({
     required this.bangumiCount,
     required this.episodeCount,
+    required this.source,
     this.compact = false,
   });
 
   final int bangumiCount;
   final int episodeCount;
+  final _SourceFootprint source;
   final bool compact;
 
   @override
@@ -263,30 +333,31 @@ class _WatchStatsPanel extends StatelessWidget {
                   Expanded(
                     child: Semantics(
                       header: true,
-                      child: Text('观看足迹',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(
-                                  color: colors.onPrimaryContainer,
-                                  fontWeight: FontWeight.w700)),
+                      child: Text(
+                        '观看足迹',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colors.onPrimaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               )
             else
-              Text('观看统计',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: colors.onSurfaceVariant)),
+              Text(
+                '观看统计',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: _StatCount(
                     value: bangumiCount,
-                    label: '看过番剧',
+                    label: '动漫历史条目',
                     foreground: compact ? colors.onPrimaryContainer : null,
                   ),
                 ),
@@ -301,21 +372,78 @@ class _WatchStatsPanel extends StatelessWidget {
                 else
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Icon(Icons.auto_awesome_rounded,
-                        color: colors.primary, size: 20),
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: colors.primary,
+                      size: 20,
+                    ),
                   ),
                 Expanded(
                   child: _StatCount(
                     value: episodeCount,
-                    label: '观看集数',
+                    label: '动漫记录集数',
                     foreground: compact ? colors.onPrimaryContainer : null,
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Divider(
+              color: compact
+                  ? colors.onPrimaryContainer.withValues(alpha: .16)
+                  : null,
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatCount(
+                    value: source.tvCount,
+                    label: '电视剧历史条目',
+                    foreground: compact ? colors.onPrimaryContainer : null,
+                  ),
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: _StatCount(
+                    value: source.movieCount,
+                    label: '电影历史条目',
+                    foreground: compact ? colors.onPrimaryContainer : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('影视历史按来源分别计数', style: Theme.of(context).textTheme.bodySmall),
+            if (source.latest != null) ...[
+              const SizedBox(height: 6),
+              _LatestSourceHistory(history: source.latest!),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 时间和进度都取自最近一条真实落盘记录，不把当前进度累加为观看时长。
+class _LatestSourceHistory extends StatelessWidget {
+  const _LatestSourceHistory({required this.history});
+  final SourceHistory history;
+
+  @override
+  Widget build(BuildContext context) {
+    final local = history.updatedAt.toLocal();
+    final date = MaterialLocalizations.of(context).formatShortDate(local);
+    final time = TimeOfDay.fromDateTime(local).format(context);
+    final position = Duration(milliseconds: history.positionMs);
+    final progress =
+        '${position.inMinutes}:${(position.inSeconds % 60).toString().padLeft(2, '0')}';
+    return Text(
+      '最近影视：$date $time\n${history.media.title} · ${history.episodeTitle} · 进度 $progress',
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: Theme.of(context).textTheme.bodySmall,
     );
   }
 }
@@ -335,17 +463,23 @@ class _StatCount extends StatelessWidget {
         // Scale large totals without shrinking their labels.
         FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text('$value',
-              style: theme.textTheme.displaySmall?.copyWith(
-                  color: foreground ?? theme.colorScheme.onSurface,
-                  fontWeight: FontWeight.w800,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
+          child: Text(
+            '$value',
+            style: theme.textTheme.displaySmall?.copyWith(
+              color: foreground ?? theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ),
         const SizedBox(height: 2),
-        Text(label,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelMedium?.copyWith(
-                color: foreground ?? theme.colorScheme.onSurfaceVariant)),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: foreground ?? theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
       ],
     );
   }
@@ -363,10 +497,10 @@ class _SpaceHeading extends StatelessWidget {
           child: Text(
             '个人中心',
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: colors.onSurface,
-                  height: 1.2,
-                ),
+              fontWeight: FontWeight.w800,
+              color: colors.onSurface,
+              height: 1.2,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -410,17 +544,23 @@ class _RulesTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('规则设置',
-                      style: text.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: colors.onPrimary)),
+                  Text(
+                    '规则设置',
+                    style: text.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.onPrimary,
+                    ),
+                  ),
                   const SizedBox(height: 6),
-                  Text('管理番剧来源',
-                      style:
-                          text.bodyMedium?.copyWith(color: colors.onPrimary)),
+                  Text(
+                    '管理番剧来源',
+                    style: text.bodyMedium?.copyWith(color: colors.onPrimary),
+                  ),
                   const SizedBox(height: 20),
                   _ArrowCue(
-                      color: colors.onPrimary, foreground: colors.primary),
+                    color: colors.onPrimary,
+                    foreground: colors.primary,
+                  ),
                 ],
               ),
             ),
@@ -479,13 +619,18 @@ class _ToolTile extends StatelessWidget {
               ],
             ),
             SizedBox(height: compact ? 12 : 26),
-            Text(title,
-                style: text.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700, color: foreground)),
+            Text(
+              title,
+              style: text.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: foreground,
+              ),
+            ),
             SizedBox(height: compact ? 4 : 6),
-            Text(caption,
-                style:
-                    text.bodySmall?.copyWith(color: foreground, height: 1.4)),
+            Text(
+              caption,
+              style: text.bodySmall?.copyWith(color: foreground, height: 1.4),
+            ),
           ],
         ),
       ),
@@ -518,9 +663,13 @@ class _PreferencesPanel extends StatelessWidget {
           children: [
             Semantics(
               header: true,
-              child: Text('偏好设置',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700, color: colors.onSurface)),
+              child: Text(
+                '偏好设置',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.onSurface,
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             IntrinsicHeight(
@@ -585,11 +734,14 @@ class _PreferenceAction extends StatelessWidget {
           children: [
             Icon(icon, size: 28),
             const SizedBox(height: 10),
-            Text(label,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colors.onSecondaryContainer)),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: colors.onSecondaryContainer,
+              ),
+            ),
           ],
         ),
       ),
@@ -631,14 +783,16 @@ class _ArrowCue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
-        child: Container(
-          width: 52,
-          height: 32,
-          decoration: BoxDecoration(
-              color: color, borderRadius: BorderRadius.circular(20)),
-          child: Icon(Icons.arrow_forward_rounded, color: foreground, size: 20),
-        ),
-      );
+    child: Container(
+      width: 52,
+      height: 32,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Icon(Icons.arrow_forward_rounded, color: foreground, size: 20),
+    ),
+  );
 }
 
 enum _SpaceShape { sun, clover }
@@ -660,17 +814,17 @@ class _ShapeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
-        child: ClipPath(
-          clipper: _SpaceShapeClipper(shape),
-          child: ColoredBox(
-            color: color,
-            child: SizedBox.square(
-              dimension: size,
-              child: Icon(icon, color: foreground, size: size * .44),
-            ),
-          ),
+    child: ClipPath(
+      clipper: _SpaceShapeClipper(shape),
+      child: ColoredBox(
+        color: color,
+        child: SizedBox.square(
+          dimension: size,
+          child: Icon(icon, color: foreground, size: size * .44),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _SpaceShapeClipper extends CustomClipper<Path> {
@@ -683,8 +837,9 @@ class _SpaceShapeClipper extends CustomClipper<Path> {
   };
 
   @override
-  Path getClip(Size size) => _paths[shape]!
-      .transform(Matrix4.diagonal3Values(size.width, size.height, 1).storage);
+  Path getClip(Size size) => _paths[shape]!.transform(
+    Matrix4.diagonal3Values(size.width, size.height, 1).storage,
+  );
 
   @override
   bool shouldReclip(_SpaceShapeClipper oldClipper) => oldClipper.shape != shape;
@@ -718,7 +873,7 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
     final duration = reducedMotion
         ? Duration.zero
         : Duration(milliseconds: _pressed ? 150 : 300);
-    return Semantics(
+    final content = Semantics(
       button: true,
       child: AnimatedScale(
         scale: _pressed && !reducedMotion ? .97 : 1,
@@ -752,9 +907,9 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
               child: IconTheme.merge(
                 data: IconThemeData(color: widget.foreground),
                 child: DefaultTextStyle.merge(
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: widget.foreground,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(color: widget.foreground),
                   child: widget.child,
                 ),
               ),
@@ -763,6 +918,7 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
         ),
       ),
     );
+    return TvFocusFrame(radius: widget.radius.topLeft.x, child: content);
   }
 }
 
@@ -784,7 +940,11 @@ class _AdaptivePair extends StatelessWidget {
     if (stack) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [first, SizedBox(height: gap), second],
+        children: [
+          first,
+          SizedBox(height: gap),
+          second,
+        ],
       );
     }
     return IntrinsicHeight(

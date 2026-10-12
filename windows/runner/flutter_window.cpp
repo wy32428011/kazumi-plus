@@ -59,11 +59,10 @@ bool FlutterWindow::OnCreate() {
   SetWindowSubclass(flutter_view, FlutterViewSubclassProc, 0, 0);
   SetChildContent(flutter_view);
 
-  // Removed automatic window show to let window_manager plugin control visibility
-  // This prevents window flashing during startup
-  // flutter_controller_->engine()->SetNextFrameCallback([&]() {
-  //   this->Show();
-  // });
+  // 首帧完成后显示窗口，避免首次启动的对话框被留在隐藏窗口中。
+  flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    this->Show();
+  });
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
@@ -193,7 +192,7 @@ void FlutterWindow::RegisterShortcutChannel() {
       return;
     }
 
-    bool success = ShortcutUtils::CreateDesktopShortcut(L"Kazumi", L"Kazumi - Anime Player");
+    bool success = ShortcutUtils::CreateDesktopShortcut(L"Kazumi Plus", L"Kazumi Plus - Media Player");
     if (success) {
       result->Success(flutter::EncodableValue(true));
     } else {

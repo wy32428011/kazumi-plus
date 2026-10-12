@@ -47,11 +47,8 @@ class PluginBatchUpdateResult {
 typedef PluginCatalogLoader = Future<List<PluginHTTPItem>> Function();
 typedef PluginLoader = Future<Plugin> Function(String name);
 typedef PluginJsonWriter = Future<void> Function(String jsonData);
-typedef PluginErrorReporter = void Function(
-  String message,
-  Object error,
-  StackTrace stackTrace,
-);
+typedef PluginErrorReporter =
+    void Function(String message, Object error, StackTrace stackTrace);
 typedef _PluginUpdateAttempt = ({PluginUpdateResult result, Plugin? plugin});
 
 void _defaultPluginErrorReporter(
@@ -68,10 +65,10 @@ abstract class _PluginsController with Store {
     PluginLoader? pluginLoader,
     PluginJsonWriter? pluginJsonWriter,
     PluginErrorReporter? errorReporter,
-  })  : _catalogLoader = catalogLoader ?? PluginCatalogApi.getPluginList,
-        _pluginLoader = pluginLoader ?? PluginCatalogApi.getPlugin,
-        _pluginJsonWriter = pluginJsonWriter,
-        _errorReporter = errorReporter ?? _defaultPluginErrorReporter;
+  }) : _catalogLoader = catalogLoader ?? PluginCatalogApi.getPluginList,
+       _pluginLoader = pluginLoader ?? PluginCatalogApi.getPlugin,
+       _pluginJsonWriter = pluginJsonWriter,
+       _errorReporter = errorReporter ?? _defaultPluginErrorReporter;
 
   final PluginCatalogLoader _catalogLoader;
   final PluginLoader _pluginLoader;
@@ -88,6 +85,14 @@ abstract class _PluginsController with Store {
   // Explicit refresh actions always bypass this window.
   static const _pluginCatalogMaxAge = Duration(minutes: 5);
   static const _maxConcurrentRuleDownloads = 4;
+
+  // 稳定编号与随包资源一一对应，新增来源独立记录安装决定。
+  static const _plusPresetAssets = {
+    'kazumi-plus.baofeng': 'assets/plugins/baofeng.json',
+    'kazumi-plus.subo': 'assets/plugins/subo.json',
+    'kazumi-plus.modu': 'assets/plugins/modu.json',
+    'kazumi-plus.guangsu': 'assets/plugins/guangsu.json',
+  };
 
   @observable
   ObservableList<Plugin> pluginList = ObservableList.of([]);
@@ -119,6 +124,91 @@ abstract class _PluginsController with Store {
       await newPluginDirectory!.create(recursive: true);
     }
     await _loadAllPlugins();
+    await _seedPlusRulesOnce();
+  }
+
+  /// 每个随包影视源只处理一次，升级可增量安装且保留删除、禁用决定。
+  Future<void> _seedPlusRulesOnce() {
+    return _mutations.run(() async {
+      final marker = File('${newPluginDirectory!.path}/plus_seed_v1.json');
+      final processedRuleIds = await _readPlusSeedRuleIds(marker);
+      for (final entry in _plusPresetAssets.entries) {
+        if (processedRuleIds.contains(entry.key)) continue;
+        final raw = await rootBundle.loadString(entry.value);
+        final preset = Plugin.fromJson(
+          Map<String, dynamic>.from(jsonDecode(raw)),
+        );
+        preset.validateCatalog();
+        if (preset.ruleId != entry.key ||
+            preset.plusSchemaVersion != 1 ||
+            preset.catalog == null ||
+            preset.name.trim().isEmpty ||
+            preset.requiresNewerClient) {
+          throw FormatException('预置影视来源格式或编号不正确：${entry.value}');
+        }
+        // 同编号已有规则保持原样，包含用户编辑与禁用状态。
+        final alreadyInstalled = pluginList.any(
+          (plugin) => pluginIdentityKey(plugin) == pluginIdentityKey(preset),
+        );
+        if (!alreadyInstalled) {
+          // 同名自定义规则不覆盖，仅为新预置选择不冲突的显示名称。
+          final originalName = preset.name;
+          var suffix = 1;
+          while (pluginList.any(
+            (plugin) =>
+                pluginNameKey(plugin.name) == pluginNameKey(preset.name),
+          )) {
+            preset.name = '$originalName（Plus ${suffix++}）';
+          }
+        }
+        // 逐项保存成功后才记入处理集合，失败项下次启动仍可重试。
+        await _mutateAndPersistNow(() {
+          if (!alreadyInstalled) _replacePlugin(preset);
+        }, errorMessage: 'Plugin: 预置影视来源「${preset.name}」保存失败');
+        final nextRuleIds = {...processedRuleIds, preset.ruleId};
+        await _writePlusSeedRuleIds(marker, nextRuleIds);
+        processedRuleIds.add(preset.ruleId);
+      }
+    });
+  }
+
+  Future<Set<String>> _readPlusSeedRuleIds(File marker) async {
+    if (!await marker.exists()) return <String>{};
+    try {
+      final data = jsonDecode(await marker.readAsString());
+      if (data is! Map<String, dynamic> || data['version'] != 1) {
+        throw const FormatException('预置影视来源安装记录格式或版本不正确');
+      }
+      // 旧标记仅代表暴风已处理，不能据此重新安装用户删除的暴风源。
+      if (!data.containsKey('ruleIds')) return {'kazumi-plus.baofeng'};
+      final ruleIds = data['ruleIds'];
+      if (ruleIds is! List ||
+          ruleIds.any(
+            (id) => id is! String || id.trim().isEmpty || id.trim() != id,
+          )) {
+        throw const FormatException('预置影视来源安装记录缺少有效的 ruleIds');
+      }
+      return ruleIds.cast<String>().toSet();
+    } catch (error, stackTrace) {
+      // 记录损坏时停止安装，避免把已有删除决定误当成首次启动。
+      _errorReporter('Plugin: 预置影视来源安装记录读取失败', error, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> _writePlusSeedRuleIds(File marker, Set<String> ruleIds) async {
+    final temporary = File('${marker.path}.tmp');
+    try {
+      // 同目录临时文件写入并刷盘后替换，保留此前完整的安装记录。
+      await temporary.writeAsString(
+        jsonEncode({'version': 1, 'ruleIds': ruleIds.toList()}),
+        flush: true,
+      );
+      await temporary.rename(marker.path);
+    } catch (error, stackTrace) {
+      _errorReporter('Plugin: 预置影视来源安装记录保存失败', error, stackTrace);
+      rethrow;
+    }
   }
 
   // Loads all plugins from the directory, populates the plugin list, and saves to plugins.json if needed
@@ -167,17 +257,26 @@ abstract class _PluginsController with Store {
   Future<void> copyPluginsToExternalDirectory() async {
     final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     final assets = assetManifest.listAssets();
-    final jsonFiles = assets.where((String asset) =>
-        asset.startsWith('assets/plugins/') && asset.endsWith('.json'));
+    final jsonFiles = assets.where(
+      (String asset) =>
+          asset.startsWith('assets/plugins/') && asset.endsWith('.json'),
+    );
 
     for (var filePath in jsonFiles) {
       final jsonString = await rootBundle.loadString(filePath);
       final plugin = Plugin.fromJson(jsonDecode(jsonString));
-      pluginList.add(plugin);
+      // Plus 预置由首次初始化标记管理，重新进入引导不能恢复已删除来源。
+      if (plugin.plusSchemaVersion > 0) continue;
+      if (!pluginList.any(
+        (current) => pluginIdentityKey(current) == pluginIdentityKey(plugin),
+      )) {
+        pluginList.add(plugin);
+      }
     }
     await _savePlugins();
     KazumiLogger().i(
-        'Plugin: ${jsonFiles.length} plugin files copied to ${newPluginDirectory!.path}');
+      'Plugin: ${jsonFiles.length} plugin files copied to ${newPluginDirectory!.path}',
+    );
   }
 
   List<dynamic> _pluginListToJson() {
@@ -202,7 +301,7 @@ abstract class _PluginsController with Store {
     return _mutateAndPersist(
       () => pluginList.removeWhere(
         (candidate) =>
-            pluginNameKey(candidate.name) == pluginNameKey(plugin.name),
+            pluginIdentityKey(candidate) == pluginIdentityKey(plugin),
       ),
       errorMessage: 'Plugin: failed to persist rule removal',
     );
@@ -214,16 +313,40 @@ abstract class _PluginsController with Store {
         DateTime.now().difference(refreshedAt) < _pluginCatalogMaxAge;
   }
 
-  void _replacePlugin(Plugin plugin) {
+  void _replacePlugin(
+    Plugin plugin, {
+    bool preserveEnabled = false,
+    Plugin? previous,
+  }) {
+    plugin.validateCatalog();
+    if (previous?.ruleId.isNotEmpty == true &&
+        previous!.ruleId != plugin.ruleId) {
+      throw const FormatException('已有来源的稳定编号不能修改');
+    }
+    final replacingKey = pluginIdentityKey(previous ?? plugin);
+    if (pluginList.any(
+      (current) =>
+          pluginIdentityKey(current) != replacingKey &&
+          (pluginIdentityKey(current) == pluginIdentityKey(plugin) ||
+              pluginNameKey(current.name) == pluginNameKey(plugin.name)),
+    )) {
+      throw FormatException('存在相同编号或名称的其它来源「${plugin.name}」，请先改名');
+    }
     bool flag = false;
     for (int i = 0; i < pluginList.length; ++i) {
-      if (pluginNameKey(pluginList[i].name) == pluginNameKey(plugin.name)) {
+      if (pluginIdentityKey(pluginList[i]) == replacingKey) {
+        if (preserveEnabled) plugin.enabled = pluginList[i].enabled;
         pluginList.replaceRange(i, i + 1, [plugin]);
         flag = true;
         break;
       }
     }
     if (!flag) {
+      if (pluginList.any(
+        (current) => pluginNameKey(current.name) == pluginNameKey(plugin.name),
+      )) {
+        throw FormatException('存在同名的不同来源「${plugin.name}」，请先为新来源改名');
+      }
       pluginList.add(plugin);
     }
   }
@@ -233,10 +356,7 @@ abstract class _PluginsController with Store {
     required String errorMessage,
   }) {
     return _mutations.run(
-      () => _mutateAndPersistNow(
-        mutate,
-        errorMessage: errorMessage,
-      ),
+      () => _mutateAndPersistNow(mutate, errorMessage: errorMessage),
     );
   }
 
@@ -258,22 +378,19 @@ abstract class _PluginsController with Store {
     }
   }
 
-  Future<void> updatePlugin(Plugin plugin) {
+  Future<void> updatePlugin(Plugin plugin, {Plugin? previous}) {
     return _mutateAndPersist(
-      () => _replacePlugin(plugin),
+      () => _replacePlugin(plugin, previous: previous),
       errorMessage: 'Plugin: failed to persist rule update',
     );
   }
 
   Future<void> updatePlugins(Iterable<Plugin> plugins) {
-    return _mutateAndPersist(
-      () {
-        for (final plugin in plugins) {
-          _replacePlugin(plugin);
-        }
-      },
-      errorMessage: 'Plugin: failed to persist imported rules',
-    );
+    return _mutateAndPersist(() {
+      for (final plugin in plugins) {
+        _replacePlugin(plugin, preserveEnabled: true);
+      }
+    }, errorMessage: 'Plugin: failed to persist imported rules');
   }
 
   Future<void> onReorder(int oldIndex, int newIndex) {
@@ -342,9 +459,7 @@ abstract class _PluginsController with Store {
 
   Future<List<PluginHTTPItem>> ensurePluginCatalog() {
     if (isPluginCatalogFresh) {
-      return Future.value(
-        List<PluginHTTPItem>.unmodifiable(pluginHTTPList),
-      );
+      return Future.value(List<PluginHTTPItem>.unmodifiable(pluginHTTPList));
     }
     return refreshPluginCatalog();
   }
@@ -408,7 +523,7 @@ abstract class _PluginsController with Store {
       final attempt = await _preparePluginUpdate(catalogName);
       if (attempt.result == PluginUpdateResult.updated) {
         await _mutateAndPersistNow(
-          () => _replacePlugin(attempt.plugin!),
+          () => _replacePlugin(attempt.plugin!, preserveEnabled: true),
           errorMessage:
               'Plugin: failed to persist downloaded rule $catalogName',
         );
@@ -446,10 +561,7 @@ abstract class _PluginsController with Store {
     remotePlugin.name = name;
     try {
       if (remotePlugin.requiresNewerClient) {
-        return (
-          result: PluginUpdateResult.requiresNewerClient,
-          plugin: null,
-        );
+        return (result: PluginUpdateResult.requiresNewerClient, plugin: null);
       }
     } catch (error, stackTrace) {
       _errorReporter(
@@ -465,6 +577,16 @@ abstract class _PluginsController with Store {
         local = plugin;
         break;
       }
+    }
+    // 上游目录按名称检索，不能用缺少编号的旧规则覆盖同名 Plus 来源。
+    if (local?.ruleId.isNotEmpty == true &&
+        local!.ruleId != remotePlugin.ruleId) {
+      return (result: PluginUpdateResult.failed, plugin: null);
+    }
+    try {
+      remotePlugin.validateCatalog();
+    } catch (_) {
+      return (result: PluginUpdateResult.failed, plugin: null);
     }
     // Never downgrade an installed plugin; mirrors may lag behind upstream.
     if (local != null && !_remoteIsNewer(local.version, remotePlugin.version)) {
@@ -513,14 +635,11 @@ abstract class _PluginsController with Store {
     }
 
     if (updatedPlugins.isNotEmpty) {
-      await _mutateAndPersistNow(
-        () {
-          for (final plugin in updatedPlugins) {
-            _replacePlugin(plugin);
-          }
-        },
-        errorMessage: 'Plugin: failed to persist batch rule update',
-      );
+      await _mutateAndPersistNow(() {
+        for (final plugin in updatedPlugins) {
+          _replacePlugin(plugin, preserveEnabled: true);
+        }
+      }, errorMessage: 'Plugin: failed to persist batch rule update');
     }
     return PluginBatchUpdateResult(
       candidates: candidates.length,
@@ -556,16 +675,13 @@ abstract class _PluginsController with Store {
 
   Future<void> removePlugins(Set<String> pluginNames) {
     final names = Set<String>.of(pluginNames);
-    return _mutateAndPersist(
-      () {
-        for (int i = pluginList.length - 1; i >= 0; --i) {
-          var name = pluginList[i].name;
-          if (names.contains(name)) {
-            pluginList.removeAt(i);
-          }
+    return _mutateAndPersist(() {
+      for (int i = pluginList.length - 1; i >= 0; --i) {
+        var name = pluginList[i].name;
+        if (names.contains(name)) {
+          pluginList.removeAt(i);
         }
-      },
-      errorMessage: 'Plugin: failed to persist batch rule removal',
-    );
+      }
+    }, errorMessage: 'Plugin: failed to persist batch rule removal');
   }
 }

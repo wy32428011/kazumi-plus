@@ -126,6 +126,7 @@ class AutoUpdater {
   }
 
   Future<UpdateInfo?> checkForUpdates() async {
+    if (ApiEndpoints.latestApp.isEmpty) return null;
     try {
       final data = await _latestRelease();
 
@@ -168,6 +169,7 @@ class AutoUpdater {
   }
 
   Future<void> autoCheckForUpdates() async {
+    if (ApiEndpoints.latestApp.isEmpty) return;
     final autoUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
     if (!autoUpdate) return;
 
@@ -182,6 +184,10 @@ class AutoUpdater {
   }
 
   Future<void> manualCheckForUpdates() async {
+    if (ApiEndpoints.latestApp.isEmpty) {
+      KazumiDialog.showToast(message: '尚未配置 Kazumi Plus 更新渠道，请使用独立版发布包更新。');
+      return;
+    }
     try {
       final updateInfo = await checkForUpdates();
       if (updateInfo != null) {

@@ -20,20 +20,25 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
+import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/navigation.dart';
+import 'package:kazumi/services/media/source_media_library.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerEchHttpLicenses();
   MediaKit.ensureInitialized();
+  await PlatformEnvironmentService.initialize();
   if (Platform.isAndroid || Platform.isIOS) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-      statusBarColor: Colors.transparent,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        statusBarColor: Colors.transparent,
+      ),
+    );
   }
 
   if (Platform.isAndroid) {
@@ -44,6 +49,7 @@ void main() async {
     final hivePath = '${(await getApplicationSupportDirectory()).path}/hive';
     await Hive.initFlutter(hivePath);
     await GStorage.init();
+    await SourceMediaLibrary.instance.init();
   } catch (e) {
     debugPrint('Storage initialization failed: $e');
 
@@ -55,18 +61,27 @@ void main() async {
         await windowManager.focus();
       });
     }
-    runApp(MaterialApp(
+    runApp(
+      MaterialApp(
         title: '初始化失败',
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [
           Locale.fromSubtags(
-              languageCode: 'zh', scriptCode: 'Hans', countryCode: "CN")
+            languageCode: 'zh',
+            scriptCode: 'Hans',
+            countryCode: "CN",
+          ),
         ],
         locale: const Locale.fromSubtags(
-            languageCode: 'zh', scriptCode: 'Hans', countryCode: "CN"),
+          languageCode: 'zh',
+          scriptCode: 'Hans',
+          countryCode: "CN",
+        ),
         builder: (context, child) {
-          return const StorageErrorPage();
-        }));
+          return StorageErrorPage(errorMessage: e.toString());
+        },
+      ),
+    );
     return;
   }
   await DownloadDirectoryService().restoreAccess();
@@ -83,7 +98,7 @@ void main() async {
           ? TitleBarStyle.hidden
           : TitleBarStyle.normal,
       windowButtonVisibility: showWindowButton,
-      title: 'Kazumi',
+      title: 'Kazumi Plus',
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       // window_manager controls desktop visibility to avoid startup flicker.

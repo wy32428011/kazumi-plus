@@ -1,0 +1,11 @@
+#pragma once
+#include <string>
+inline const std::string &eh_ca_bundle() {
+  // 完整保留上游 CA 文件的每个字节，运行时接口与证书验证行为保持一致。
+  static const unsigned char root_bytes[] = {
+@EH_CA_BYTES@
+  };
+  static const std::string roots(reinterpret_cast<const char *>(root_bytes),
+                                 sizeof(root_bytes));
+  return roots;
+}

@@ -1,7 +1,7 @@
 name: kazumi
-description: "A new Flutter project."
+description: "支持动漫、电视剧与电影的独立 Kazumi Plus 客户端。"
 publish_to: "none"
-version: 2.3.8+20308
+version: 0.1.0+1
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -104,6 +104,11 @@ dependencies:
       path: ./media_kit_video
   macos_secure_bookmarks: ^0.2.1
 
+# Windows 编译兼容补丁保留原始证书字节，说明见依赖目录。
+dependency_overrides:
+  ech_http:
+    path: third_party/ech_http
+
 dev_dependencies:
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
@@ -146,8 +151,9 @@ flutter_native_splash:
   image_dark_ios: assets/images/logo/logo_ios.png
 
 msix_config:
-  display_name: Kazumi
-  publisher: CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US
+  display_name: Kazumi Plus
+  identity_name: app.kazumiplus.client
+  publisher: CN=Kazumi Plus
   logo_path: assets/images/logo/logo_rounded.png
   sign_msix: false
   install_certificate: false

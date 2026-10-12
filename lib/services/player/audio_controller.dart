@@ -22,9 +22,11 @@ class AudioController {
   AudioCallback? _onPlay;
   AudioCallback? _onPause;
   bool _playInterrupted = false;
+  AsyncSession? _interruptedSession;
   bool? _lastAudioSessionActive;
   final AsyncSessionOwner _sessions = AsyncSessionOwner();
   AsyncSession? _boundSession;
+  Object? _bindingOwner;
   bool _artworkPending = false;
   Uri? _artworkUri;
 
@@ -73,12 +75,12 @@ class AudioController {
 
       if (Platform.isAndroid || Platform.isIOS) {
         _becomingNoisySubscription?.cancel();
-        _becomingNoisySubscription =
-            _audioSession!.becomingNoisyEventStream.listen((_) {
-          if (_handler?.playbackState.value.playing ?? false) {
-            unawaited(_safePause());
-          }
-        });
+        _becomingNoisySubscription = _audioSession!.becomingNoisyEventStream
+            .listen((_) {
+              if (_handler?.playbackState.value.playing ?? false) {
+                unawaited(_safePause());
+              }
+            });
       }
     } catch (e) {
       KazumiLogger().w('AudioController: audio_session init failed', error: e);
@@ -93,6 +95,7 @@ class AudioController {
         case AudioInterruptionType.pause:
         case AudioInterruptionType.unknown:
           _playInterrupted = true;
+          _interruptedSession = _boundSession;
           unawaited(_safePause());
           break;
         case AudioInterruptionType.duck:
@@ -101,12 +104,18 @@ class AudioController {
       return;
     }
 
-    if (event.type == AudioInterruptionType.pause && _playInterrupted) {
+    if (event.type == AudioInterruptionType.pause &&
+        _playInterrupted &&
+        _interruptedSession != null &&
+        identical(_interruptedSession, _boundSession) &&
+        !_interruptedSession!.isStale) {
       _playInterrupted = false;
+      _interruptedSession = null;
       unawaited(_safePlay());
       return;
     }
     _playInterrupted = false;
+    _interruptedSession = null;
   }
 
   Future<void> _safePause() async {
@@ -140,6 +149,7 @@ class AudioController {
   }
 
   Future<void> bindCallbacks({
+    Object? owner,
     required AudioCallback onPlay,
     required AudioCallback onPause,
     required AudioCallback onSkipToNext,
@@ -148,6 +158,10 @@ class AudioController {
     required String? artworkUrl,
   }) async {
     final binding = _sessions.begin();
+    // 新播放会话不能继承旧会话尚未结束的音频中断。
+    _playInterrupted = false;
+    _interruptedSession = null;
+    _bindingOwner = owner;
     _boundSession = null;
     _resetArtwork();
     _clearCallbacks();
@@ -178,6 +192,7 @@ class AudioController {
   }
 
   Future<void> updateSession({
+    Object? owner,
     required String mediaId,
     required String title,
     String? album,
@@ -194,6 +209,10 @@ class AudioController {
     required bool canSkipToNext,
     required bool canSkipToPrevious,
   }) async {
+    // 有身份的影视会话与原有动漫会话互斥，旧页面不能更新新页面的媒体状态。
+    if (!identical(owner, _bindingOwner)) {
+      return;
+    }
     final binding = _boundSession;
     if (binding == null || binding.isStale) return;
     await ensureInitialized();
@@ -241,21 +260,21 @@ class AudioController {
     final processingState = completed
         ? AudioProcessingState.completed
         : loading
-            ? AudioProcessingState.loading
-            : buffering
-                ? AudioProcessingState.buffering
-                : AudioProcessingState.ready;
+        ? AudioProcessingState.loading
+        : buffering
+        ? AudioProcessingState.buffering
+        : AudioProcessingState.ready;
 
     final normalizedPosition = duration == null
         ? updatePosition
         : updatePosition > duration
-            ? duration
-            : updatePosition;
+        ? duration
+        : updatePosition;
     final normalizedBufferedPosition = duration == null
         ? bufferedPosition
         : bufferedPosition > duration
-            ? duration
-            : bufferedPosition;
+        ? duration
+        : bufferedPosition;
 
     handler.updatePlaybackState(
       PlaybackState(
@@ -263,9 +282,7 @@ class AudioController {
         androidCompactActionIndices: compactActionIndices,
         systemActions: duration == null || duration == Duration.zero
             ? const {}
-            : const {
-                MediaAction.seek,
-              },
+            : const {MediaAction.seek},
         processingState: processingState,
         playing: playing,
         updatePosition: normalizedPosition,
@@ -303,12 +320,23 @@ class AudioController {
     _artworkPending = false;
   }
 
-  Future<void> deactivate() {
+  bool isBoundTo(Object owner) =>
+      identical(owner, _bindingOwner) &&
+      _boundSession != null &&
+      !_boundSession!.isStale;
+
+  Future<void> deactivate({Object? owner}) {
+    // 退出旧页面时只释放自己持有的会话，包括仍在初始化的绑定请求。
+    if (!identical(owner, _bindingOwner)) {
+      return Future<void>.value();
+    }
     final deactivation = _sessions.begin();
+    _bindingOwner = null;
     _boundSession = null;
     _resetArtwork();
     _clearCallbacks();
     _playInterrupted = false;
+    _interruptedSession = null;
     final initialization = _initFuture;
     if (initialization == null) {
       return Future<void>.value();

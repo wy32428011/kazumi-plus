@@ -7,6 +7,7 @@ import 'package:kazumi/pages/index_page.dart';
 import 'package:kazumi/pages/info/info_module.dart';
 import 'package:kazumi/pages/init_page.dart';
 import 'package:kazumi/pages/my/my_module.dart';
+import 'package:kazumi/pages/media/media_module.dart';
 import 'package:kazumi/pages/onboarding/onboarding_page.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/pages/popular/popular_module.dart';
@@ -94,10 +95,7 @@ final indexModule = createModule(
         '/error',
         child: (context, state) => Scaffold(
           appBar: AppBar(title: const Text('Kazumi')),
-          body: const GeneralErrorWidget(
-            title: '初始化失败',
-            errMsg: '请重新启动应用后再试。',
-          ),
+          body: const GeneralErrorWidget(title: '初始化失败', errMsg: '请重新启动应用后再试。'),
         ),
       )
       ..module(tabModule)
@@ -118,6 +116,7 @@ final indexModule = createModule(
         transition: _imagePreviewTransition,
       )
       ..module(infoModule)
+      ..module(mediaModule)
       ..module(settingsModule)
       ..module(searchModule);
   },

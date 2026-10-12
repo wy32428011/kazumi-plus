@@ -22,6 +22,28 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+// TV 使用独立发布身份；环境变量只要有一项出现，就不混用本地签名配置。
+def tvSigningProperties = new Properties()
+def tvSigningFile = rootProject.file('../.tools/signing/kazumi-plus-tv/signing.properties')
+def tvSigningEnvironmentNames = [
+    'KAZUMI_TV_KEYSTORE_PATH', 'KAZUMI_TV_KEYSTORE_PASSWORD',
+    'KAZUMI_TV_KEY_ALIAS', 'KAZUMI_TV_KEY_PASSWORD'
+]
+def usesTvSigningEnvironment = tvSigningEnvironmentNames.any { System.getenv(it) }
+if (usesTvSigningEnvironment) {
+    [storeFile: 'KAZUMI_TV_KEYSTORE_PATH', storePassword: 'KAZUMI_TV_KEYSTORE_PASSWORD',
+     keyAlias: 'KAZUMI_TV_KEY_ALIAS', keyPassword: 'KAZUMI_TV_KEY_PASSWORD'].each { key, environmentName ->
+        def value = System.getenv(environmentName)
+        if (value != null) tvSigningProperties.setProperty(key, value)
+    }
+} else if (tvSigningFile.exists()) {
+    tvSigningFile.withReader('UTF-8') { tvSigningProperties.load(it) }
+}
+def tvSigningComplete = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every {
+    def value = tvSigningProperties.getProperty(it)
+    value != null && !value.isBlank()
+}
+
 android {
     namespace "com.example.kazumi"
     compileSdk flutter.compileSdkVersion
@@ -44,7 +66,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId "com.predidit.kazumi"
+        applicationId "app.kazumiplus.client"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdkVersion flutter.minSdkVersion
@@ -53,12 +75,75 @@ android {
         versionName flutterVersionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+    signingConfigs {
+        tvRelease {
+            storeType 'PKCS12'
+            if (tvSigningComplete) {
+                storeFile file(tvSigningProperties.getProperty('storeFile'))
+                storePassword tvSigningProperties.getProperty('storePassword')
+                keyAlias tvSigningProperties.getProperty('keyAlias')
+                keyPassword tvSigningProperties.getProperty('keyPassword')
+            }
+        }
+    }
+
+    // 同一代码库分别产出手机端与电视端，保留手机端的应用标识及既有调试证书。
+    flavorDimensions += 'device'
+    productFlavors {
+        mobile {
+            dimension 'device'
+            applicationId 'app.kazumiplus.client'
             signingConfig signingConfigs.debug
         }
+        tv {
+            dimension 'device'
+            applicationId 'app.kazumiplus.client.tv'
+            signingConfig signingConfigs.tvRelease
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            // 发布签名由各 flavor 指定，不能在这里用 debug 覆盖 TV 的专用证书。
+        }
+    }
+}
+
+// 缺失或错误的 TV 发布密钥必须使构建失败，禁止生成未签名包或静默回退 debug。
+def verifyTvReleaseSigning = tasks.register('verifyTvReleaseSigning') {
+    doLast {
+        if (!tvSigningComplete) {
+            throw new GradleException('TV release 缺少专用签名配置。请初始化本地密钥或注入完整 TV Secrets。')
+        }
+        def keyFile = file(tvSigningProperties.getProperty('storeFile'))
+        def publicFile = rootProject.file('../scripts/signing/tv-release-certificate.json')
+        if (!keyFile.isFile() || !publicFile.isFile()) {
+            throw new GradleException('TV release 签名文件或固定公钥指纹不存在。')
+        }
+        try {
+            def keyStore = java.security.KeyStore.getInstance('PKCS12')
+            keyFile.withInputStream { keyStore.load(it, tvSigningProperties.getProperty('storePassword').toCharArray()) }
+            def certificate = keyStore.getCertificate(tvSigningProperties.getProperty('keyAlias'))
+            if (certificate == null) throw new IllegalStateException('missing certificate')
+            def fingerprint = java.security.MessageDigest.getInstance('SHA-256').digest(certificate.encoded).encodeHex().toString()
+            def expected = new groovy.json.JsonSlurper().parse(publicFile).certificateSha256
+            if (!fingerprint.equalsIgnoreCase(expected.toString())) {
+                throw new GradleException('TV release 证书与固定公钥指纹不一致，拒绝更换发布身份。')
+            }
+            logger.lifecycle("TV release certificate SHA-256 verified: ${fingerprint}")
+        } catch (GradleException failure) {
+            throw failure
+        } catch (Exception ignored) {
+            throw new GradleException('TV release 签名文件无法验证，请检查专用签名配置。')
+        }
+    }
+}
+tasks.configureEach { candidate ->
+    if (candidate.name in ['preTvReleaseBuild', 'validateSigningTvRelease', 'packageTvRelease', 'packageTvReleaseBundle', 'signTvReleaseBundle']) {
+        candidate.dependsOn(verifyTvReleaseSigning)
     }
 }
 

@@ -25,15 +25,15 @@ class ApiEndpoints {
       'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/';
 
   /// 在线升级
+  // 发布者显式配置独立版渠道；缺省不请求原版安装包。
   static const String latestApp =
-      'https://api.github.com/repos/Predidit/Kazumi/releases/latest';
+      String.fromEnvironment('KAZUMI_PLUS_UPDATE_URL');
 
   /// Bangumi 镜像测试后端
   static const String bangumiMirrorDomain = 'https://api.kazumi.fyi';
 
   /// Kazumi 镜像后端应用更新
-  static const String latestAppMirror =
-      '$bangumiMirrorDomain/kazumi/v1/app/latest';
+  static const String latestAppMirror = latestApp;
 
   /// 弹弹官网
   static const String dandanIndex = 'https://www.dandanplay.com/';

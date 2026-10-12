@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -9,6 +10,7 @@ import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
 import 'package:kazumi/pages/plugin_editor/editor_form_widgets.dart';
 import 'package:kazumi/plugins/anti_crawler_config.dart';
 import 'package:kazumi/plugins/api_rule_config.dart';
+import 'package:kazumi/plugins/catalog_rule_config.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
@@ -167,6 +169,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   final TextEditingController searchNameController = TextEditingController();
   final TextEditingController searchResultController = TextEditingController();
   final TextEditingController chapterRoadsController = TextEditingController();
+  final TextEditingController chapterRoadNameController = TextEditingController();
   final TextEditingController chapterResultController = TextEditingController();
   final TextEditingController refererController = TextEditingController();
   final TextEditingController searchApiURLController = TextEditingController();
@@ -231,6 +234,11 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   bool useLegacyParser = false;
   bool adBlocker = false;
 
+  final TextEditingController catalogController = TextEditingController();
+  late String _ruleId;
+  late Set<String> _supportedMediaTypes;
+  bool _enabled = true;
+
   final TextEditingController captchaImageController = TextEditingController();
   final TextEditingController captchaInputController = TextEditingController();
   final TextEditingController captchaButtonController = TextEditingController();
@@ -275,6 +283,12 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     final Plugin plugin = widget.plugin;
     _api = plugin.api;
     _type = plugin.type;
+    _ruleId = plugin.ruleId;
+    _supportedMediaTypes = plugin.supportedMediaTypes.toSet();
+    _enabled = plugin.enabled;
+    catalogController.text = plugin.catalog == null
+        ? ''
+        : _prettyJson(plugin.catalog!.toJson());
     nameController.text = plugin.name;
     versionController.text = plugin.version;
     userAgentController.text = plugin.userAgent;
@@ -284,6 +298,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchNameController.text = plugin.searchName;
     searchResultController.text = plugin.searchResult;
     chapterRoadsController.text = plugin.chapterRoads;
+    chapterRoadNameController.text = plugin.chapterRoadName;
     chapterResultController.text = plugin.chapterResult;
     refererController.text = plugin.referer;
     searchMode = plugin.searchMode;
@@ -292,11 +307,14 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchApiBodyType = plugin.searchApiConfig.request.bodyType;
     searchApiURLController.text = plugin.searchApiConfig.request.url;
     searchApiHeadersController.text =
-        _prettyJson(plugin.searchApiConfig.request.headers);
+        _prettyJson(plugin.searchApiConfig.request.headers,
+    );
     searchApiQueryController.text =
-        _prettyJson(plugin.searchApiConfig.request.query);
+        _prettyJson(plugin.searchApiConfig.request.query,
+    );
     searchApiBodyController.text =
-        _prettyJson(plugin.searchApiConfig.request.body);
+        _prettyJson(plugin.searchApiConfig.request.body,
+    );
     searchApiListPathController.text = plugin.searchApiConfig.listPath;
     searchApiNamePathController.text = plugin.searchApiConfig.namePath;
     searchApiSourcePathController.text = plugin.searchApiConfig.sourcePath;
@@ -305,11 +323,14 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     chapterApiFormat = plugin.chapterApiConfig.format;
     chapterApiURLController.text = plugin.chapterApiConfig.request.url;
     chapterApiHeadersController.text =
-        _prettyJson(plugin.chapterApiConfig.request.headers);
+        _prettyJson(plugin.chapterApiConfig.request.headers,
+    );
     chapterApiQueryController.text =
-        _prettyJson(plugin.chapterApiConfig.request.query);
+        _prettyJson(plugin.chapterApiConfig.request.query,
+    );
     chapterApiBodyController.text =
-        _prettyJson(plugin.chapterApiConfig.request.body);
+        _prettyJson(plugin.chapterApiConfig.request.body,
+    );
     chapterApiRoadsPathController.text = plugin.chapterApiConfig.roadsPath;
     chapterApiRoadNamePathController.text =
         plugin.chapterApiConfig.roadNamePath;
@@ -330,11 +351,13 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     chapterApiFieldSeparatorController.text =
         plugin.chapterApiConfig.fieldSeparator;
     chapterApiVariablesController.text =
-        _prettyJson(plugin.chapterApiConfig.variables);
+        _prettyJson(plugin.chapterApiConfig.variables,
+    );
     chapterApiPageURLController.text =
         plugin.chapterApiConfig.episodePage?.url ?? '';
     chapterApiPageQueryController.text =
-        _prettyJson(plugin.chapterApiConfig.episodePage?.query);
+        _prettyJson(plugin.chapterApiConfig.episodePage?.query,
+    );
     _muliSources = plugin.muliSources;
     _useWebview = plugin.useWebview;
     _useNativePlayer = plugin.useNativePlayer;
@@ -364,8 +387,10 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchNameController.dispose();
     searchResultController.dispose();
     chapterRoadsController.dispose();
+    chapterRoadNameController.dispose();
     chapterResultController.dispose();
     refererController.dispose();
+    catalogController.dispose();
     searchApiURLController.dispose();
     searchApiHeadersController.dispose();
     searchApiQueryController.dispose();
@@ -419,7 +444,9 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
       _editorError = null;
     });
     try {
-      await pluginsController.updatePlugin(editedPlugin);
+      await pluginsController.updatePlugin(editedPlugin,
+        previous: widget.plugin,
+      );
       if (mounted) context.pop();
     } catch (error) {
       _showEditorError(error);
@@ -449,7 +476,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                     title: widget.plugin.name.isEmpty
                         ? '编写新规则'
                         : widget.plugin.name,
-                    description: '从站点信息到搜索与选集，逐步配置你的番剧来源。',
+                    description: '配置来源的搜索、选集，以及电影和电视剧资料。',
                     icon: Icons.edit_note_rounded,
                   ),
                   const SizedBox(height: 20),
@@ -460,9 +487,11 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                             color: colors.errorContainer,
-                            borderRadius: BorderRadius.circular(20)),
+                            borderRadius: BorderRadius.circular(20),
+                        ),
                         child: Text(_editorError!,
-                            style: TextStyle(color: colors.onErrorContainer)),
+                            style: TextStyle(color: colors.onErrorContainer),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -474,6 +503,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                       ButtonSegment(value: 1, label: Text('搜索')),
                       ButtonSegment(value: 2, label: Text('选集')),
                       ButtonSegment(value: 3, label: Text('高级')),
+                      ButtonSegment(value: 4, label: Text('资料')),
                     ],
                     onChanged: (value) => setState(() => _section = value),
                   ),
@@ -499,24 +529,32 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                   Expanded(
                       child: FilledButton.tonalIcon(
                           style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 48)),
+                              minimumSize: const Size(0, 48),
+                        ),
                           onPressed: _saving ? null : _testRule,
                           icon: const Icon(Icons.science_outlined),
                           label: Text(
                               MediaQuery.textScalerOf(context).scale(14) > 20
                                   ? '测试'
-                                  : _RuleEditorText.testRule))),
+                                  : _RuleEditorText.testRule,
+                        ),
+                      ),
+                    ),
                   const SizedBox(width: 12),
                   Expanded(
                       child: FilledButton.icon(
                           style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 48)),
+                              minimumSize: const Size(0, 48),
+                        ),
                           onPressed: _saving ? null : _save,
                           icon: _saving
                               ? const LoadingIndicator(size: 20)
                               : const Icon(Icons.check_rounded),
-                          label: Text(_saving ? '保存中' : _RuleEditorText.save))),
-                ]),
+                          label: Text(_saving ? '保存中' : _RuleEditorText.save),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -526,6 +564,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   }
 
   Widget _buildCurrentSection() {
+    if (_section == 4) return _buildCatalogSection();
     if (_section == 3) return _buildAdvancedOptionsCard();
     final isSearch = _section == 1;
     return RuleSection(
@@ -552,13 +591,16 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
             ? [
                 EditorTextField(
                     controller: nameController,
-                    label: _RuleEditorText.ruleName),
+                    label: _RuleEditorText.ruleName,
+                ),
                 EditorTextField(
                     controller: versionController,
-                    label: _RuleEditorText.ruleVersion),
+                    label: _RuleEditorText.ruleVersion,
+                ),
                 EditorTextField(
                     controller: baseURLController,
-                    label: _RuleEditorText.baseUrl),
+                    label: _RuleEditorText.baseUrl,
+                ),
               ]
             : [
                 EditorSegmentedField<String>(
@@ -596,6 +638,58 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
       ),
     );
   }
+
+  Widget _buildCatalogSection() => RuleSection(
+    title: '内容类型与影视资料',
+    description: '资料规则负责分类、发现、搜索与详情，播放列表继续使用「选集」配置。',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('启用来源'),
+          subtitle: const Text('关闭后保留规则与收藏，启动或更新不会自动恢复。'),
+          value: _enabled,
+          onChanged: (value) => setState(() => _enabled = value),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in const {
+              'anime': '动漫',
+              'tv': '电视剧',
+              'movie': '电影',
+            }.entries)
+              FilterChip(
+                label: Text(entry.value),
+                selected: _supportedMediaTypes.contains(entry.key),
+                onSelected: (value) => setState(() {
+                  if (value) {
+                    _supportedMediaTypes.add(entry.key);
+                  } else {
+                    _supportedMediaTypes.remove(entry.key);
+                  }
+                }),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SelectableText(
+          _ruleId.isEmpty ? '来源编号：保存影视资料规则时自动生成，导出后请保持不变。' : '来源编号：$_ruleId',
+        ),
+        const SizedBox(height: 16),
+        EditorTextField(
+          controller: catalogController,
+          label: '资料配置 JSON（catalog）',
+          maxLines: 20,
+          helper:
+              '留空保留原动漫规则。channels 以 tv/movie 区分频道；每频道包含分类白名单、默认分类、categories/discover/search/detail。各操作支持 api 或 xpath；可参考预置「暴风影视」的配置。',
+        ),
+      ],
+    ),
+  );
 
   Widget _buildAdvancedOptionsCard() {
     return RuleSection(
@@ -793,6 +887,11 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
           label: _RuleEditorText.roadListXPath,
         ),
         EditorTextField(
+          controller: chapterRoadNameController,
+          label: '线路名称 XPath（可选）',
+          helper: '相对当前线路节点提取源站名称，保持影视续播在线路重排后仍可匹配。',
+        ),
+        EditorTextField(
           controller: chapterResultController,
           label: _RuleEditorText.episodeListXPath,
         ),
@@ -976,13 +1075,28 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   Plugin _buildEditedPlugin() {
     final searchConfig = _buildSearchApiConfig();
     final chapterConfig = _buildChapterApiConfig();
-    return Plugin(
+    final rawCatalog = catalogController.text.trim();
+    final catalog = rawCatalog.isEmpty
+        ? null
+        : CatalogRuleConfig.fromJson(_parseJsonMap(catalogController, '资料配置'));
+    if (catalog != null && _ruleId.isEmpty) {
+      // 随机编号只生成一次；后续改名与域名变更不影响作品身份。
+      final random = Random.secure();
+      _ruleId =
+          'plus.${List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
+    }
+    final plugin = Plugin(
       api: searchMode == RuleMode.api || chapterMode == RuleMode.api
           ? ApiEndpoints.apiLevel.toString()
           : _api,
       type: _type,
       name: nameController.text,
       version: versionController.text,
+      ruleId: _ruleId,
+      plusSchemaVersion: catalog == null ? widget.plugin.plusSchemaVersion : 1,
+      supportedMediaTypes: _supportedMediaTypes.toList(),
+      enabled: _enabled,
+      catalog: catalog,
       muliSources: _muliSources,
       useWebview: _useWebview,
       useNativePlayer: _useNativePlayer,
@@ -996,6 +1110,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
       searchName: searchNameController.text,
       searchResult: searchResultController.text,
       chapterRoads: chapterRoadsController.text,
+      chapterRoadName: chapterRoadNameController.text,
       chapterResult: chapterResultController.text,
       referer: refererController.text,
       searchMode: searchMode,
@@ -1013,6 +1128,8 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
         captchaScript: captchaScriptController.text,
       ),
     );
+    plugin.validateCatalog();
+    return plugin;
   }
 
   ApiSearchConfig _buildSearchApiConfig() {
@@ -1029,8 +1146,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
         body: _parseBody(
           searchApiBodyController,
           searchApiBodyType,
-          '搜索请求体',
-        ),
+          '搜索请求体'),
       ),
       listPath: valueOf(searchApiListPathController),
       namePath: valueOf(searchApiNamePathController),
@@ -1050,8 +1166,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     final pageUrl = chapterApiPageURLController.text.trim();
     final variablesRaw = _parseJsonMap(
       chapterApiVariablesController,
-      '选集响应变量',
-    );
+      '选集响应变量');
     final config = ApiChapterConfig(
       request: ApiRequestConfig(
         method: chapterApiMethod,
@@ -1062,8 +1177,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
         body: _parseBody(
           chapterApiBodyController,
           chapterApiBodyType,
-          '选集请求体',
-        ),
+          '选集请求体'),
       ),
       format: chapterApiFormat,
       roadsPath: chapterApiRoadsPathController.text.trim(),
@@ -1085,8 +1199,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
               url: pageUrl,
               query: _parseJsonMap(
                 chapterApiPageQueryController,
-                '播放页查询参数',
-              ),
+                '播放页查询参数'),
             ),
     );
     if (chapterMode != RuleMode.api) return config;
@@ -1136,7 +1249,8 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     if (_formScroll.hasClients) {
       _formScroll.animateTo(0,
           duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic);
+          curve: Curves.easeOutCubic,
+      );
     }
   }
 }

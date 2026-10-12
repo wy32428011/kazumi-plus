@@ -8,14 +8,13 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 
 class StorageErrorPage extends StatelessWidget {
-  const StorageErrorPage({super.key});
+  const StorageErrorPage({super.key, this.errorMessage});
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('内部错误'),
-      ),
+      appBar: AppBar(title: const Text('内部错误')),
       body: FutureBuilder<Directory>(
         future: getApplicationSupportDirectory(),
         builder: (context, snapshot) {
@@ -24,7 +23,9 @@ class StorageErrorPage extends StatelessWidget {
             return GeneralErrorWidget(
               title: '无法初始化本地存储',
               icon: Icons.storage_rounded,
-              errMsg: '当前存储位置：\n$path\n\n可在退出后删除该目录以重置本地存储，此操作会清除本地数据。',
+              errMsg:
+                  '当前存储位置：\n$path\n\n请先退出并备份此目录，再重试或从备份恢复。'
+                  '${errorMessage == null ? '' : '\n\n错误信息：$errorMessage'}',
               actions: [
                 StateActionButton(
                   onPressed: () {

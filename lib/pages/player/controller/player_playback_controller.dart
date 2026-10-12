@@ -171,8 +171,10 @@ abstract class _PlayerPlaybackController with Store {
       await player.play();
       startOffset = 0;
     } catch (e) {
-      KazumiLogger()
-          .w('PlayerController: failed to restart from beginning', error: e);
+      KazumiLogger().w(
+        'PlayerController: failed to restart from beginning',
+        error: e,
+      );
     }
   }
 
@@ -272,14 +274,17 @@ abstract class _PlayerPlaybackController with Store {
     required bool Function() canInstall,
     int offset = 0,
     VideoSourceFormat videoSourceFormat = VideoSourceFormat.auto,
+    void Function(String message)? onPlaybackError,
+    bool honorPlatformDecoderFallback = false,
   }) async {
     startOffset = offset;
     superResolutionMode = SuperResolutionMode.fromStorageValue(
       GStorage.getSetting(SettingsKeys.defaultSuperResolutionMode),
     );
     hAenable = GStorage.getSetting(SettingsKeys.hAenable);
-    androidEnableOpenSLES =
-        GStorage.getSetting(SettingsKeys.androidEnableOpenSLES);
+    androidEnableOpenSLES = GStorage.getSetting(
+      SettingsKeys.androidEnableOpenSLES,
+    );
     hardwareDecoder = GStorage.getSetting(SettingsKeys.hardwareDecoder);
     autoPlay = GStorage.getSetting(SettingsKeys.autoPlay);
     playerDebugMode = GStorage.getSetting(SettingsKeys.playerDebugMode);
@@ -369,17 +374,16 @@ abstract class _PlayerPlaybackController with Store {
         }
       }
 
-      await player.setAudioTrack(
-        AudioTrack.auto(),
-      );
+      await player.setAudioTrack(AudioTrack.auto());
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);
       }
 
       String? videoRenderer;
       if (Platform.isAndroid) {
-        final String androidVideoRenderer =
-            GStorage.getSetting(SettingsKeys.androidVideoRenderer);
+        final String androidVideoRenderer = GStorage.getSetting(
+          SettingsKeys.androidVideoRenderer,
+        );
 
         if (androidVideoRenderer == 'auto') {
           // Android 14 及以上使用基于 Vulkan 的 MPV GPU-NEXT 视频输出，着色器性能更好
@@ -406,13 +410,23 @@ abstract class _PlayerPlaybackController with Store {
         superResolutionMode = SuperResolutionMode.off;
       }
 
+      // 影视的默认自动解码交由平台选择，使上游模拟器兼容分支生效。
+      // 用户显式选择、动漫入口及真实设备的硬解能力仍按原配置处理。
+      final usePlatformDecoder =
+          honorPlatformDecoderFallback &&
+          Platform.isAndroid &&
+          hAenable &&
+          hardwareDecoder == 'auto-safe' &&
+          videoRenderer != 'mediacodec_embed';
       videoController ??= VideoController(
         player,
         configuration: VideoControllerConfiguration(
           vo: videoRenderer,
           enableHardwareAcceleration: hAenable,
           enableAndroidSurfaceProducer: false,
-          hwdec: hAenable ? hardwareDecoder : 'no',
+          hwdec: usePlatformDecoder
+              ? null
+              : (hAenable ? hardwareDecoder : 'no'),
           androidAttachSurfaceAfterVideoParameters: false,
         ),
       );
@@ -429,17 +443,28 @@ abstract class _PlayerPlaybackController with Store {
             isBuffering: playerBuffering,
           );
           if (actionableMessage != null) {
+            if (canInstall()) onPlaybackError?.call(actionableMessage);
             KazumiDialog.showToast(
-                message: actionableMessage, showActionButton: true);
+              message: actionableMessage,
+              showActionButton: true,
+            );
+          } else if (canInstall() &&
+              event.contains('Failed to open') &&
+              playerDuration == Duration.zero) {
+            // 独立播放页可呈现终止加载失败；已有动漫页仍使用原提示行为。
+            onPlaybackError?.call('媒体地址无法打开，请重试或更换线路。');
           } else if (showPlayerError) {
             KazumiDialog.showToast(
-                message: '播放器内部错误 ${event.toString()} ${videoUrl()}',
-                duration: const Duration(seconds: 5),
-                showActionButton: true);
+              message: '播放器内部错误 ${event.toString()} ${videoUrl()}',
+              duration: const Duration(seconds: 5),
+              showActionButton: true,
+            );
           }
         }
-        KazumiLogger().e('PlayerController: Player intent error ${videoUrl()}',
-            error: event);
+        KazumiLogger().e(
+          'PlayerController: Player intent error ${videoUrl()}',
+          error: event,
+        );
       });
 
       if (superResolutionMode != SuperResolutionMode.off) {
@@ -457,8 +482,11 @@ abstract class _PlayerPlaybackController with Store {
       }
 
       await player.open(
-        Media(videoUrl(),
-            start: Duration(seconds: offset), httpHeaders: httpHeaders),
+        Media(
+          videoUrl(),
+          start: Duration(seconds: offset),
+          httpHeaders: httpHeaders,
+        ),
         play: autoPlay,
       );
       if (!isCurrentPlayer(player)) {
@@ -529,8 +557,10 @@ abstract class _PlayerPlaybackController with Store {
     try {
       mediaPlayer!.setRate(playerSpeed);
     } catch (e) {
-      KazumiLogger()
-          .e('PlayerController: failed to set playback speed', error: e);
+      KazumiLogger().e(
+        'PlayerController: failed to set playback speed',
+        error: e,
+      );
     }
   }
 

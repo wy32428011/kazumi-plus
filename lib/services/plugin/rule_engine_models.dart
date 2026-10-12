@@ -6,6 +6,18 @@ import 'package:kazumi/plugins/api_rule_config.dart';
 
 typedef RuleCancelToken = CancelToken;
 
+/// 资料阶段错误单独标记，界面可重试原操作而不是错误地退回搜索。
+class CatalogErrorException implements Exception {
+  const CatalogErrorException(this.pluginName, this.operation, {this.cause});
+  final String pluginName;
+  final String operation;
+  final Object? cause;
+
+  @override
+  String toString() =>
+      '$pluginName 的$operation失败${cause == null ? '' : '：$cause'}';
+}
+
 class CaptchaRequiredException implements Exception {
   const CaptchaRequiredException(this.pluginName);
 
@@ -64,6 +76,7 @@ class RuleExecutionConfig {
     required this.searchName,
     required this.searchResult,
     required this.chapterRoads,
+    this.chapterRoadName = '',
     required this.chapterResult,
     required this.searchApiConfig,
     required this.chapterApiConfig,
@@ -80,6 +93,7 @@ class RuleExecutionConfig {
   final String searchName;
   final String searchResult;
   final String chapterRoads;
+  final String chapterRoadName;
   final String chapterResult;
   final ApiSearchConfig searchApiConfig;
   final ApiChapterConfig chapterApiConfig;

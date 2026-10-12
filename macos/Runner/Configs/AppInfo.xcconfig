@@ -5,10 +5,17 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = kazumi
+PRODUCT_NAME = Kazumi Plus
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.kazumi
+PRODUCT_BUNDLE_IDENTIFIER = app.kazumiplus.client
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2024 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Kazumi Plus contributors. All rights reserved.
+
+// 固定 Swift 模块及可执行文件名称，应用名称可以包含空格。
+PRODUCT_MODULE_NAME = KazumiPlus
+EXECUTABLE_NAME = KazumiPlus
+// 发布包必须同时包含 Apple Silicon 与 Intel；构建脚本会检查所有原生切片。
+ARCHS = arm64 x86_64
+ONLY_ACTIVE_ARCH = NO

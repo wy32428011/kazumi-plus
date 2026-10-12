@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Kazumi</string>
+	<string>Kazumi Plus</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>kazumi</string>
+	<string>Kazumi Plus</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -36,7 +36,7 @@
 		<true/>
 	</dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string></string>
+	<string>将您主动保存的视频截图写入相册。</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.pravera.flutter_foreground_task.refresh</string>
@@ -87,5 +87,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>MinimumOSVersion</key>
+	<string>15.0</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>选择您指定的图片进行以图搜番。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>拍摄您指定的图片进行以图搜番。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>连接您选择的局域网媒体来源和播放设备。</string>
 </dict>
 </plist>

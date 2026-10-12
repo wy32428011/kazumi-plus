@@ -75,7 +75,7 @@ class PluginImportParser {
     final uniquePlugins = <String, Plugin>{};
     var duplicateCount = 0;
     for (final plugin in parsed) {
-      final key = pluginNameKey(plugin.name);
+      final key = pluginIdentityKey(plugin);
       if (uniquePlugins.containsKey(key)) {
         duplicateCount++;
       }
@@ -168,6 +168,7 @@ class PluginImportParser {
       if (plugin.requiresNewerClient) {
         throw const FormatException('规则需要更高版本客户端');
       }
+      plugin.validateCatalog();
       plugins.add(plugin);
     } catch (error) {
       failures.add('第 $index 条：$error');

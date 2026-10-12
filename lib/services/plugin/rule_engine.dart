@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/plugins/api_rule_config.dart';
+import 'package:kazumi/plugins/catalog_rule_config.dart';
 import 'package:kazumi/request/clients/plugin_site_client.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
@@ -32,6 +33,48 @@ class RuleEngine {
   final ApiRuleStrategy _apiStrategy;
   final XPathRuleStrategy _xpathStrategy;
   final bool _logFailures;
+
+  /// 资料请求沿用规则请求执行器；API 与 XPath 仅在响应提取阶段分流。
+  Future<String> requestCatalog(
+    RuleExecutionConfig config,
+    CatalogOperation operation,
+    Map<String, Object?> variables, {
+    required String phase,
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final request = _apiStrategy.prepareRequest(operation.request, variables);
+      final raw = await _requestExecutor.execute(
+        request,
+        config,
+        cancelToken: cancelToken,
+      );
+      if (config.antiCrawlerConfig.enabled &&
+          _xpathStrategy.detectsCaptchaChallenge(
+            raw,
+            config.antiCrawlerConfig,
+          )) {
+        throw CaptchaRequiredException(config.pluginName);
+      }
+      return raw;
+    } on CaptchaRequiredException {
+      rethrow;
+    } catch (error, stackTrace) {
+      if (_isCancellation(error) ||
+          (error is DioException && CancelToken.isCancel(error))) {
+        rethrow;
+      }
+      if (_isCaptchaChallengeResponse(
+        SearchErrorException(config.pluginName, cause: error),
+        config,
+        mode: operation.mode,
+      )) {
+        throw CaptchaRequiredException(config.pluginName);
+      }
+      _logFailure(config, phase, error, stackTrace);
+      throw CatalogErrorException(config.pluginName, phase, cause: error);
+    }
+  }
 
   Future<RuleSearchTrace> search(
     RuleExecutionConfig config,
@@ -215,9 +258,10 @@ class RuleEngine {
   /// request over to the existing captcha flow when it matches.
   bool _isCaptchaChallengeResponse(
     SearchErrorException error,
-    RuleExecutionConfig config,
-  ) {
-    if (config.searchMode != RuleMode.xpath ||
+    RuleExecutionConfig config, {
+    String? mode,
+  }) {
+    if ((mode ?? config.searchMode) != RuleMode.xpath ||
         !config.antiCrawlerConfig.enabled) {
       return false;
     }
@@ -344,7 +388,8 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
     if (uri == null) return '';
     try {
       final cookies =
-          await PluginCookieManager.instance.loadForRequest(pluginName, uri);
+          await PluginCookieManager.instance.loadForRequest(pluginName, uri,
+      );
       return cookies
           .map((cookie) => '${cookie.name}=${cookie.value}')
           .join('; ');

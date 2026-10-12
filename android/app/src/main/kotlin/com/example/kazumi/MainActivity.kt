@@ -1,6 +1,8 @@
 package com.example.kazumi
 
 import android.app.PendingIntent
+import android.app.UiModeManager
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.BroadcastReceiver
@@ -19,6 +21,7 @@ import android.app.PictureInPictureParams
 import android.graphics.drawable.Icon
 import android.util.Rational
 import android.view.View
+import android.webkit.WebView
 import androidx.annotation.NonNull
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -126,6 +129,20 @@ class MainActivity: AudioServiceActivity() {
             } else if (call.method == "getAndroidSdkVersion") {
                 val sdkVersion = getAndroidSdkVersion()
                 result.success(sdkVersion)
+            } else if (call.method == "getDeviceCapabilities") {
+                val uiMode = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+                // 系统电视模式与电视功能声明都可识别；普通盒子由 Flutter 构建标记补充。
+                val television = uiMode?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                    packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                var webViewAvailable = packageManager.hasSystemFeature(PackageManager.FEATURE_WEBVIEW)
+                if (webViewAvailable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    webViewAvailable = try {
+                        WebView.getCurrentWebViewPackage() != null
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                result.success(mapOf("television" to television, "webViewAvailable" to webViewAvailable))
             } else if (call.method == "setSystemBarsHidden") {
                 systemBarsHidden = call.arguments as? Boolean ?: false
                 applySystemBarsState()

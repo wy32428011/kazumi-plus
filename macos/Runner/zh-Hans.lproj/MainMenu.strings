@@ -13,11 +13,11 @@
 /* Class = "NSMenuItem"; title = "Enter Full Screen"; ObjectID = "4J7-dP-txa"; */
 "4J7-dP-txa.title" = "进入全屏幕";
 
-/* Class = "NSMenuItem"; title = "Quit APP_NAME"; ObjectID = "4sb-4s-VLi"; */
-"4sb-4s-VLi.title" = "退出APP_NAME";
+/* Class = "NSMenuItem"; title = "Quit Kazumi Plus"; ObjectID = "4sb-4s-VLi"; */
+"4sb-4s-VLi.title" = "退出Kazumi Plus";
 
-/* Class = "NSMenuItem"; title = "About APP_NAME"; ObjectID = "5kV-Vb-QxS"; */
-"5kV-Vb-QxS.title" = "关于APP_NAME";
+/* Class = "NSMenuItem"; title = "About Kazumi Plus"; ObjectID = "5kV-Vb-QxS"; */
+"5kV-Vb-QxS.title" = "关于Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Edit"; ObjectID = "5QF-Oa-p0T"; */
 "5QF-Oa-p0T.title" = "编辑";
@@ -79,8 +79,8 @@
 /* Class = "NSMenuItem"; title = "Volume Up"; ObjectID = "o2L-YK-Znd"; */
 "o2L-YK-Znd.title" = "音量加";
 
-/* Class = "NSMenuItem"; title = "Hide APP_NAME"; ObjectID = "Olw-nP-bQN"; */
-"Olw-nP-bQN.title" = "隐藏APP_NAME";
+/* Class = "NSMenuItem"; title = "Hide Kazumi Plus"; ObjectID = "Olw-nP-bQN"; */
+"Olw-nP-bQN.title" = "隐藏Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Previous"; ObjectID = "Ox4-Od-VDn"; */
 "Ox4-Od-VDn.title" = "上一集";

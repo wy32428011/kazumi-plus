@@ -1,0 +1,126 @@
+{
+  "verifiedAt": "2026-10-12T15:13:38.947811Z",
+  "scope": "真实API、现有解析器、HLS清单、密钥及首分片；未验证播放器音画",
+  "sources": [
+    {
+      "source": "subo",
+      "ruleId": "kazumi-plus.subo",
+      "channels": {
+        "tv": {
+          "categoryCount": 7,
+          "defaultCategoryId": "14",
+          "title": "美人余",
+          "id": "161128",
+          "itemsOnPage": 20,
+          "hasMore": true,
+          "roads": 1,
+          "episodes": 10,
+          "media": {
+            "entry": "https://play.xluuss.com/play/eERPDp0a/index.m3u8",
+            "playlist": "https://play.xluuss.com/play/eERPDp0a/index.m3u8",
+            "segment": "https://g.xlzyd.com:9999/hls/953/20261009/4509960/plist0.ts",
+            "segmentBytes": 1024,
+            "keyBytes": 16
+          }
+        },
+        "movie": {
+          "categoryCount": 8,
+          "defaultCategoryId": "10",
+          "title": "魔法情缘",
+          "id": "158822",
+          "itemsOnPage": 20,
+          "hasMore": true,
+          "roads": 1,
+          "episodes": 1,
+          "media": {
+            "entry": "https://play.xluuss.com/play/bYEQ6LKb/index.m3u8",
+            "playlist": "https://play.xluuss.com/play/bYEQ6LKb/index.m3u8",
+            "segment": "https://g.xlzyd.com:9999/hls/953/20261012/4519974/plist0.ts",
+            "segmentBytes": 1024,
+            "keyBytes": 16
+          }
+        }
+      }
+    },
+    {
+      "source": "modu",
+      "ruleId": "kazumi-plus.modu",
+      "channels": {
+        "tv": {
+          "categoryCount": 8,
+          "defaultCategoryId": "26",
+          "title": "伟大的长征",
+          "id": "90995",
+          "itemsOnPage": 20,
+          "hasMore": true,
+          "roads": 1,
+          "episodes": 10,
+          "media": {
+            "entry": "https://play.modujx17.com/20261010/Ji7GTAlO/index.m3u8",
+            "playlist": "https://play.modujx17.com/20261010/Ji7GTAlO/1214kb/hls/index.m3u8",
+            "segment": "https://bf.modujx17.com/20261010/Ji7GTAlO/1214kb/hls/0NHXw9ym.ts",
+            "segmentBytes": 1024,
+            "keyBytes": null
+          }
+        },
+        "movie": {
+          "categoryCount": 17,
+          "defaultCategoryId": "15",
+          "title": "奔跑吧紫溪",
+          "id": "91146",
+          "itemsOnPage": 20,
+          "hasMore": true,
+          "roads": 1,
+          "episodes": 1,
+          "media": {
+            "entry": "https://play.modujx17.com/20261012/Ny6ZqnsJ/index.m3u8",
+            "playlist": "https://play.modujx17.com/20261012/Ny6ZqnsJ/1173kb/hls/index.m3u8",
+            "segment": "https://bf.modujx17.com/20261012/Ny6ZqnsJ/1173kb/hls/h1KqRcds.ts",
+            "segmentBytes": 1024,
+            "keyBytes": null
+          }
+        }
+      }
+    },
+    {
+      "source": "guangsu",
+      "ruleId": "kazumi-plus.guangsu",
+      "channels": {
+        "tv": {
+          "categoryCount": 7,
+          "defaultCategoryId": "13",
+          "title": "美人余",
+          "id": "220639",
+          "itemsOnPage": 20,
+          "hasMore": true,
+          "roads": 1,
+          "episodes": 10,
+          "media": {
+            "entry": "https://v.gsuus.com/play/bDk0Boqa/index.m3u8",
+            "playlist": "https://v.gsuus.com/play/hls/bDk0Boqa/index.m3u8",
+            "segment": "https://gs.gszyi.com:999/hls/953/20261009/4509960/plist0.ts",
+            "segmentBytes": 1024,
+            "keyBytes": 16
+          }
+        },
+        "movie": {
+          "categoryCount": 9,
+          "defaultCategoryId": "10",
+          "title": "魔法情缘",
+          "id": "218329",
+          "itemsOnPage": 20,
+          "hasMore": true,
+          "roads": 1,
+          "episodes": 1,
+          "media": {
+            "entry": "https://v.gsuus.com/play/eXD76KWe/index.m3u8",
+            "playlist": "https://v.gsuus.com/play/hls/eXD76KWe/index.m3u8",
+            "segment": "https://gs.gszyi.com:999/hls/953/20261012/4519974/plist0.ts",
+            "segmentBytes": 1024,
+            "keyBytes": 16
+          }
+        }
+      }
+    }
+  ]
+}

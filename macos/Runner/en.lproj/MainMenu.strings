@@ -1,6 +1,6 @@
 
-/* Class = "NSMenuItem"; title = "APP_NAME"; ObjectID = "1Xt-HY-uBw"; */
-"1Xt-HY-uBw.title" = "APP_NAME";
+/* Class = "NSMenuItem"; title = "Kazumi Plus"; ObjectID = "1Xt-HY-uBw"; */
+"1Xt-HY-uBw.title" = "Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Transformations"; ObjectID = "2oI-Rn-ZJC"; */
 "2oI-Rn-ZJC.title" = "Transformations";
@@ -11,14 +11,14 @@
 /* Class = "NSMenuItem"; title = "Enter Full Screen"; ObjectID = "4J7-dP-txa"; */
 "4J7-dP-txa.title" = "Enter Full Screen";
 
-/* Class = "NSMenuItem"; title = "Quit APP_NAME"; ObjectID = "4sb-4s-VLi"; */
-"4sb-4s-VLi.title" = "Quit APP_NAME";
+/* Class = "NSMenuItem"; title = "Quit Kazumi Plus"; ObjectID = "4sb-4s-VLi"; */
+"4sb-4s-VLi.title" = "Quit Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Edit"; ObjectID = "5QF-Oa-p0T"; */
 "5QF-Oa-p0T.title" = "Edit";
 
-/* Class = "NSMenuItem"; title = "About APP_NAME"; ObjectID = "5kV-Vb-QxS"; */
-"5kV-Vb-QxS.title" = "About APP_NAME";
+/* Class = "NSMenuItem"; title = "About Kazumi Plus"; ObjectID = "5kV-Vb-QxS"; */
+"5kV-Vb-QxS.title" = "About Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Redo"; ObjectID = "6dh-zS-Vam"; */
 "6dh-zS-Vam.title" = "Redo";
@@ -47,14 +47,14 @@
 /* Class = "NSMenuItem"; title = "Minimize"; ObjectID = "OY7-WF-poV"; */
 "OY7-WF-poV.title" = "Minimize";
 
-/* Class = "NSMenuItem"; title = "Hide APP_NAME"; ObjectID = "Olw-nP-bQN"; */
-"Olw-nP-bQN.title" = "Hide APP_NAME";
+/* Class = "NSMenuItem"; title = "Hide Kazumi Plus"; ObjectID = "Olw-nP-bQN"; */
+"Olw-nP-bQN.title" = "Hide Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Stop Speaking"; ObjectID = "Oyz-dy-DGm"; */
 "Oyz-dy-DGm.title" = "Stop Speaking";
 
-/* Class = "NSWindow"; title = "APP_NAME"; ObjectID = "QvC-M9-y7g"; */
-"QvC-M9-y7g.title" = "APP_NAME";
+/* Class = "NSWindow"; title = "Kazumi Plus"; ObjectID = "QvC-M9-y7g"; */
+"QvC-M9-y7g.title" = "Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Zoom"; ObjectID = "R4o-n2-Eq4"; */
 "R4o-n2-Eq4.title" = "Zoom";
@@ -101,8 +101,8 @@
 /* Class = "NSMenu"; title = "Help"; ObjectID = "rJ0-wn-3NY"; */
 "rJ0-wn-3NY.title" = "Help";
 
-/* Class = "NSMenu"; title = "APP_NAME"; ObjectID = "uQy-DD-JDr"; */
-"uQy-DD-JDr.title" = "APP_NAME";
+/* Class = "NSMenu"; title = "Kazumi Plus"; ObjectID = "uQy-DD-JDr"; */
+"uQy-DD-JDr.title" = "Kazumi Plus";
 
 /* Class = "NSMenuItem"; title = "Cut"; ObjectID = "uRl-iY-unG"; */
 "uRl-iY-unG.title" = "Cut";

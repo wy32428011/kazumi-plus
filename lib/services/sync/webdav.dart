@@ -13,7 +13,8 @@ import 'package:kazumi/utils/async_serial_queue.dart';
 import 'package:kazumi/utils/async_single_flight.dart';
 
 class WebDav {
-  static const String _syncRootPath = '/kazumiSync';
+  // 独立版使用独立远端目录，避免与原版文件互写。
+  static const String _syncRootPath = '/kazumiPlusSync';
   static const String _historyRootPath = '$_syncRootPath/history';
   static const String _historyChangesPath = '$_historyRootPath/changes';
   static const String _historySnapshotPath = '$_historyRootPath/snapshot.json';

@@ -6,6 +6,7 @@ import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/pages/my/my_space_view.dart';
+import 'package:kazumi/services/media/source_media_library.dart';
 
 class MyPage extends StatefulWidget {
   const MyPage({super.key, required this.controller});
@@ -70,10 +71,9 @@ class _MyPageState extends State<MyPage> {
         toolbarHeight: 72,
         title: Text(
           '我的',
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         needTopOffset: false,
         actions: [
@@ -88,10 +88,15 @@ class _MyPageState extends State<MyPage> {
       body: SafeArea(
         top: false,
         bottom: false,
-        child: Observer(
-          builder: (context) => MySpaceView(
-            stats: widget.controller.watchStats,
-            onOpen: _open,
+        // 影视历史使用独立通知源，返回页面或进度更新后立即刷新摘要。
+        child: AnimatedBuilder(
+          animation: SourceMediaLibrary.instance,
+          builder: (context, _) => Observer(
+            builder: (context) => MySpaceView(
+              stats: widget.controller.watchStats,
+              sourceHistories: SourceMediaLibrary.instance.histories,
+              onOpen: _open,
+            ),
           ),
         ),
       ),

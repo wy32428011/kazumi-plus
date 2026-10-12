@@ -2,8 +2,10 @@ import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/plugins/anti_crawler_config.dart';
 import 'package:kazumi/plugins/api_rule_config.dart';
+import 'package:kazumi/plugins/catalog_rule_config.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/plugin/api_rule_engine.dart';
+import 'package:kazumi/services/plugin/catalog_rule_strategy.dart';
 import 'package:kazumi/utils/episode_url.dart';
 import 'package:kazumi/utils/http_headers.dart';
 
@@ -16,6 +18,11 @@ export 'package:kazumi/services/plugin/rule_engine_models.dart'
 
 String pluginNameKey(String name) => name.toLowerCase();
 
+/// 新规则按稳定编号识别，原有动漫规则继续按名称兼容。
+String pluginIdentityKey(Plugin plugin) => plugin.ruleId.isNotEmpty
+    ? 'id:${plugin.ruleId}'
+    : 'name:${pluginNameKey(plugin.name)}';
+
 class Plugin {
   static final RuleEngine _ruleEngine = RuleEngine();
 
@@ -23,6 +30,11 @@ class Plugin {
   String type;
   String name;
   String version;
+  String ruleId;
+  int plusSchemaVersion;
+  List<String> supportedMediaTypes;
+  bool enabled;
+  CatalogRuleConfig? catalog;
   bool muliSources;
 
   /// Legacy schema field retained for rule import/export compatibility.
@@ -40,6 +52,7 @@ class Plugin {
   String searchName;
   String searchResult;
   String chapterRoads;
+  String chapterRoadName;
   String chapterResult;
   String referer;
   String searchMode;
@@ -66,6 +79,7 @@ class Plugin {
     required this.searchName,
     required this.searchResult,
     required this.chapterRoads,
+    this.chapterRoadName = '',
     required this.chapterResult,
     required this.referer,
     this.searchMode = RuleMode.xpath,
@@ -73,8 +87,14 @@ class Plugin {
     ApiSearchConfig? searchApiConfig,
     ApiChapterConfig? chapterApiConfig,
     AntiCrawlerConfig? antiCrawlerConfig,
+    this.ruleId = '',
+    this.plusSchemaVersion = 0,
+    List<String>? supportedMediaTypes,
+    this.enabled = true,
+    this.catalog,
   })  : searchApiConfig = searchApiConfig ?? ApiSearchConfig(),
         chapterApiConfig = chapterApiConfig ?? ApiChapterConfig(),
+       supportedMediaTypes = supportedMediaTypes ?? [type],
         antiCrawlerConfig = antiCrawlerConfig ?? AntiCrawlerConfig.empty();
 
   factory Plugin.fromJson(Map<String, dynamic> json) {
@@ -83,6 +103,17 @@ class Plugin {
       type: json['type'] as String? ?? 'anime',
       name: json['name'] as String? ?? '',
       version: json['version']?.toString() ?? '',
+      ruleId: json['ruleId'] as String? ?? '',
+      plusSchemaVersion: (json['plusSchemaVersion'] as num?)?.toInt() ?? 0,
+      supportedMediaTypes: (json['supportedMediaTypes'] as List?)
+          ?.map((value) => value.toString())
+          .toList(),
+      enabled: json['enabled'] as bool? ?? true,
+      catalog: json['catalog'] is Map
+          ? CatalogRuleConfig.fromJson(
+              Map<String, dynamic>.from(json['catalog']),
+            )
+          : null,
       muliSources: json['muliSources'] as bool? ?? true,
       useWebview: json['useWebview'] as bool? ?? true,
       useNativePlayer: json['useNativePlayer'] as bool? ?? true,
@@ -96,6 +127,7 @@ class Plugin {
       searchName: json['searchName'] as String? ?? '',
       searchResult: json['searchResult'] as String? ?? '',
       chapterRoads: json['chapterRoads'] as String? ?? '',
+      chapterRoadName: json['chapterRoadName'] as String? ?? '',
       chapterResult: json['chapterResult'] as String? ?? '',
       referer: json['referer'] ?? '',
       searchMode: RuleMode.normalize(json['searchMode']),
@@ -153,6 +185,14 @@ class Plugin {
       'type': type,
       'name': name,
       'version': version,
+      if (ruleId.isNotEmpty) 'ruleId': ruleId,
+      if (plusSchemaVersion > 0) 'plusSchemaVersion': plusSchemaVersion,
+      if (catalog != null ||
+          supportedMediaTypes.length != 1 ||
+          supportedMediaTypes.first != type)
+        'supportedMediaTypes': supportedMediaTypes,
+      if (!enabled) 'enabled': false,
+      if (catalog != null) 'catalog': catalog!.toJson(),
       'muliSources': muliSources,
       'useWebview': useWebview,
       'useNativePlayer': useNativePlayer,
@@ -166,6 +206,7 @@ class Plugin {
       'searchName': searchName,
       'searchResult': searchResult,
       'chapterRoads': chapterRoads,
+      if (chapterRoadName.isNotEmpty) 'chapterRoadName': chapterRoadName,
       'chapterResult': chapterResult,
       'referer': referer,
       'searchMode': searchMode,
@@ -183,7 +224,30 @@ class Plugin {
 
   bool get usesApiSearch => searchMode == RuleMode.api;
 
-  bool get requiresNewerClient => int.parse(api) > ApiEndpoints.apiLevel;
+  bool get requiresNewerClient => int.parse(api) > ApiEndpoints.apiLevel || plusSchemaVersion > 1;
+
+  /// 为资料请求暴露不可变快照，沿用同一 Cookie 与取消机制。
+  RuleExecutionConfig get executionConfig => _executionConfig;
+
+  /// 导入与编辑共用校验，旧动漫规则没有资料块时保持原有行为。
+  void validateCatalog() {
+    if (supportedMediaTypes.isEmpty ||
+        supportedMediaTypes.any(
+          (value) => !const ['anime', 'tv', 'movie'].contains(value),
+        )) {
+      throw const FormatException('支持类型必须是 anime、tv 或 movie');
+    }
+    if (catalog == null) return;
+    if (ruleId.trim().isEmpty || plusSchemaVersion != 1) {
+      throw const FormatException('影视资料规则需要稳定 ruleId 和 plusSchemaVersion: 1');
+    }
+    if (catalog!.channels.keys.any(
+      (key) => !supportedMediaTypes.contains(key),
+    )) {
+      throw const FormatException('资料频道必须包含在 supportedMediaTypes 中');
+    }
+    const CatalogRuleStrategy().validate(catalog!);
+  }
 
   RuleExecutionConfig get _executionConfig => RuleExecutionConfig(
         pluginName: name,
@@ -196,6 +260,7 @@ class Plugin {
         searchName: searchName,
         searchResult: searchResult,
         chapterRoads: chapterRoads,
+        chapterRoadName: chapterRoadName,
         chapterResult: chapterResult,
         searchApiConfig: searchApiConfig,
         chapterApiConfig: chapterApiConfig,

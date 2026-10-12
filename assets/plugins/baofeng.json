@@ -1,0 +1,259 @@
+{
+  "api": "8",
+  "type": "movie",
+  "name": "暴风影视",
+  "version": "1.0.0",
+  "ruleId": "kazumi-plus.baofeng",
+  "plusSchemaVersion": 1,
+  "supportedMediaTypes": [
+    "tv",
+    "movie"
+  ],
+  "baseURL": "https://bfzyapi.com",
+  "searchMode": "api",
+  "searchApiConfig": {
+    "request": {
+      "method": "GET",
+      "url": "https://bfzyapi.com/api.php/provide/vod/",
+      "query": {
+        "ac": "videolist",
+        "wd": "@keyword",
+        "pg": 1
+      }
+    },
+    "listPath": "$.list[*]",
+    "namePath": "$.vod_name",
+    "sourcePath": "$.vod_id"
+  },
+  "chapterMode": "api",
+  "chapterApiConfig": {
+    "request": {
+      "method": "GET",
+      "url": "https://bfzyapi.com/api.php/provide/vod/",
+      "query": {
+        "ac": "videolist",
+        "ids": "@source"
+      }
+    },
+    "format": "delimited",
+    "roadNamesPath": "$.list[0].vod_play_from",
+    "roadEpisodesPath": "$.list[0].vod_play_url",
+    "roadSeparator": "$$$",
+    "episodeSeparator": "#",
+    "fieldSeparator": "$"
+  },
+  "catalog": {
+    "channels": {
+      "movie": {
+        "categoryIds": [
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28"
+        ],
+        "defaultCategoryId": "26",
+        "categories": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "list"
+            }
+          },
+          "listPath": "$.class[*]",
+          "fields": {
+            "id": "$.type_id",
+            "name": "$.type_name"
+          }
+        },
+        "discover": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "videolist",
+              "t": "@categoryId",
+              "pg": "@page"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score"
+          },
+          "totalPagesPath": "$.pagecount"
+        },
+        "search": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "videolist",
+              "wd": "@keyword",
+              "pg": "@page"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score"
+          },
+          "totalPagesPath": "$.pagecount"
+        },
+        "detail": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "videolist",
+              "ids": "@source"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score",
+            "description": "$.vod_content",
+            "cast": "$.vod_actor",
+            "genres": "$.vod_class",
+            "aliases": "$.vod_sub"
+          }
+        }
+      },
+      "tv": {
+        "categoryIds": [
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38"
+        ],
+        "defaultCategoryId": "31",
+        "categories": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "list"
+            }
+          },
+          "listPath": "$.class[*]",
+          "fields": {
+            "id": "$.type_id",
+            "name": "$.type_name"
+          }
+        },
+        "discover": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "videolist",
+              "t": "@categoryId",
+              "pg": "@page"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score"
+          },
+          "totalPagesPath": "$.pagecount"
+        },
+        "search": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "videolist",
+              "wd": "@keyword",
+              "pg": "@page"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score"
+          },
+          "totalPagesPath": "$.pagecount"
+        },
+        "detail": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "query": {
+              "ac": "videolist",
+              "ids": "@source"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score",
+            "description": "$.vod_content",
+            "cast": "$.vod_actor",
+            "genres": "$.vod_class",
+            "aliases": "$.vod_sub"
+          }
+        }
+      }
+    }
+  }
+}

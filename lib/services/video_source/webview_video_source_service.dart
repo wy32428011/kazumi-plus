@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:kazumi/webview/video/video_webview_controller.dart';
 import 'package:kazumi/services/video_source/video_source_service.dart';
+import 'package:kazumi/services/platform/webview_feature_service.dart';
+import 'package:kazumi/services/video_source/video_source_format.dart';
 
 /// WebView 视频源解析服务
 ///
@@ -60,7 +62,28 @@ class WebViewVideoSourceService implements IVideoSourceService {
   }) async {
     request.throwIfNotCurrent(_activeRequest);
 
+    final directUri = Uri.tryParse(episodeUrl);
+    final directPath = directUri?.path.toLowerCase() ?? '';
+    if (directUri != null &&
+        const {'http', 'https'}.contains(directUri.scheme) &&
+        directUri.host.isNotEmpty &&
+        RegExp(r'\.(m3u8|mp4|mkv|webm|mov|avi|m4v|ts)$').hasMatch(directPath)) {
+      // 动漫与影视的媒体直链均不需要网页组件；保留带签名的原始 URL 和续播偏移。
+      if (identical(_activeRequest, request)) {
+        _activeRequest = null;
+      }
+      return VideoSource(
+        url: episodeUrl,
+        offset: offset,
+        type: VideoSourceType.online,
+        format: directPath.endsWith('.m3u8')
+            ? VideoSourceFormat.hls
+            : VideoSourceFormat.auto,
+      );
+    }
+
     if (_webview == null) {
+      WebViewFeatureService.requireAvailable();
       _webview = VideoWebviewControllerFactory.getController();
       await _webview!.init();
 
@@ -75,11 +98,7 @@ class WebViewVideoSourceService implements IVideoSourceService {
     try {
       request.throwIfNotCurrent(_activeRequest);
       didStartLoad = true;
-      await _webview!.loadUrl(
-        episodeUrl,
-        useLegacyParser,
-        offset: offset,
-      );
+      await _webview!.loadUrl(episodeUrl, useLegacyParser, offset: offset);
 
       request.throwIfNotCurrent(_activeRequest);
 
