@@ -23,6 +23,16 @@ class ScaffoldMenu extends StatefulWidget {
 
 class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   final _outletKey = GlobalKey<RouterOutletState>();
+
+  /// 侧栏节点随外壳存活，内容页切换或返回时仍能定位当前入口。
+  final _tvMenuFocusNodes = List.generate(
+    4,
+    (index) => FocusNode(debugLabel: '电视侧栏 $index'),
+  );
+  final _tvOutletFocusNode = FocusNode(debugLabel: '电视内容边界');
+  late final _tvOutletTraversalPolicy = _TvOutletTraversalPolicy(
+    onLeftEdge: _focusTelevisionMenu,
+  );
   late int _selectedIndex = menu.indexForPath(widget.location);
   DateTime? _lastExitPromptAt;
 
@@ -50,6 +60,10 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   @override
   void dispose() {
     rootRouteObserver.unsubscribe(this);
+    for (final node in _tvMenuFocusNodes) {
+      node.dispose();
+    }
+    _tvOutletFocusNode.dispose();
     super.dispose();
   }
 
@@ -75,6 +89,34 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     if (outlet == null) return;
     outlet.navigate('/tab${menu.getPath(index)}/');
     setState(() => _selectedIndex = index);
+  }
+
+  /// 只承接当前可见内容页的左边界，不从弹层或文本编辑中夺取焦点。
+  bool _focusTelevisionMenu(FocusNode currentNode) {
+    if (!PlatformEnvironmentService.isTelevision ||
+        !mounted ||
+        _isCovered ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !currentNode.hasPrimaryFocus ||
+        !currentNode.ancestors.contains(_tvOutletFocusNode)) {
+      return false;
+    }
+    final focusedContext = currentNode.context;
+    if (focusedContext == null || !focusedContext.mounted) {
+      return false;
+    }
+    final focusedRoute = ModalRoute.of(focusedContext);
+    if (focusedRoute is! PageRoute ||
+        !focusedRoute.isCurrent ||
+        focusedContext.findAncestorWidgetOfExactType<EditableText>() != null) {
+      return false;
+    }
+    final menuNode = _tvMenuFocusNodes[_selectedIndex];
+    if (!menuNode.canRequestFocus || menuNode.context == null) {
+      return false;
+    }
+    menuNode.requestFocus();
+    return true;
   }
 
   void _handleSystemBack(BuildContext context) {
@@ -157,7 +199,8 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                         padding: const EdgeInsets.only(bottom: 10),
                         child: TvAction(
                           key: ValueKey('tv-menu-$index'),
-                          autofocus: index == 0,
+                          focusNode: _tvMenuFocusNodes[index],
+                          autofocus: index == _selectedIndex,
                           label: entries[index].$2,
                           selected: index == _selectedIndex,
                           onPressed: () => _selectDestination(index),
@@ -186,7 +229,18 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               ),
             ),
             Expanded(
-              child: _outlet(context, borderRadius: BorderRadius.circular(18)),
+              child: Focus(
+                focusNode: _tvOutletFocusNode,
+                canRequestFocus: false,
+                skipTraversal: true,
+                child: FocusTraversalGroup(
+                  policy: _tvOutletTraversalPolicy,
+                  child: _outlet(
+                    context,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -308,5 +362,28 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
         ],
       ),
     );
+  }
+}
+
+/// RouterOutlet 的路由焦点范围默认在边缘停止；电视只补齐回侧栏路径。
+class _TvOutletTraversalPolicy extends ReadingOrderTraversalPolicy {
+  _TvOutletTraversalPolicy({required this.onLeftEdge});
+
+  final bool Function(FocusNode currentNode) onLeftEdge;
+
+  @override
+  bool inDirection(FocusNode currentNode, TraversalDirection direction) {
+    if (super.inDirection(currentNode, direction)) {
+      return true;
+    }
+    if (direction != TraversalDirection.left || !onLeftEdge(currentNode)) {
+      return false;
+    }
+    // 离开内容范围后清除方向回溯，重新进入时以当前页面焦点为准。
+    final scope = currentNode.nearestScope;
+    if (scope != null) {
+      invalidateScopeData(scope);
+    }
+    return true;
   }
 }
