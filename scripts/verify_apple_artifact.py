@@ -209,8 +209,15 @@ class Runner:
             FLUTTER_XCODE_CODE_SIGNING_ALLOWED="NO",
             FLUTTER_XCODE_CODE_SIGNING_REQUIRED="NO",
             COCOAPODS_DISABLE_STATS="true",
+            KAZUMI_APPLE_COCOAPODS_VERSION=VERSIONS["cocoapods"],
+            KAZUMI_APPLE_XCODEPROJ_VERSION=VERSIONS["xcodeproj"],
             CI="true",
         )
+        # 安装指定 gem 不等于实际激活它；让全部 Ruby 后代进程在加载 CocoaPods 前固定版本。
+        self.ruby_activation = self.project / "scripts" / "apple_ruby_toolchain.rb"
+        # 库目录经 RUBYLIB 传递，避免带空格的项目路径被 RUBYOPT 拆成多个参数。
+        self.environment["RUBYLIB"] = os.pathsep.join(filter(None, [str(self.ruby_activation.parent), self.environment.get("RUBYLIB", "")]))
+        self.environment["RUBYOPT"] = " ".join(filter(None, ["-rapple_ruby_toolchain", self.environment.get("RUBYOPT", "")]))
         if target == "macos":
             self.environment.update(FLUTTER_XCODE_ARCHS="arm64 x86_64", FLUTTER_XCODE_ONLY_ACTIVE_ARCH="NO")
         self.result: dict[str, object] = {"schema_version": 1, "platform": target, "status": "running", "started_at": utc_now(), "commands": [], "tool_sources": TOOL_SOURCES, "artifacts": [], "limitations": ["云端结构检查及进程存活检查不代表真机播放验收。"]}
@@ -269,6 +276,8 @@ class Runner:
             raise BuildFailure("Apple 构建只能在 macOS/Xcode 主机执行；本机未开始编译。", 3)
         if sys.version_info < (3, 10):
             raise BuildFailure("需要 Python 3.10 或更高版本", 3)
+        if not self.ruby_activation.is_file():
+            raise BuildFailure("缺少 Apple Ruby 工具链激活脚本，拒绝回退到默认 gem 版本。", 3)
         paths = {}
         for name in ["flutter", "xcodebuild", "xcode-select", "xcrun", "pod", "ruby", "cmake", "ninja", "codesign", "hdiutil", "ditto", "git", "lipo"]:
             path = shutil.which(name)
@@ -286,12 +295,18 @@ class Runner:
         _, pod = self.run("cocoapods-version", ["pod", "--version"])
         if pod.strip() != VERSIONS["cocoapods"]:
             raise BuildFailure(f"必须使用 CocoaPods {VERSIONS['cocoapods']}", 3)
-        _, xcodeproj = self.run("xcodeproj-version", ["ruby", "-rxcodeproj", "-e", "puts Xcodeproj::VERSION"])
+        # Ruby 的命令行 -r 先于 RUBYOPT 加载；在主程序中 require 才能沿用 pod 的激活顺序。
+        _, xcodeproj = self.run("xcodeproj-version", ["ruby", "-e", "require 'xcodeproj'; puts Xcodeproj::VERSION"])
         if xcodeproj.strip() != VERSIONS["xcodeproj"]:
             raise BuildFailure(f"必须使用 xcodeproj {VERSIONS['xcodeproj']}", 3)
         _, ruby = self.run("ruby-version", ["ruby", "--version"])
         if not ruby.startswith(f"ruby {VERSIONS['ruby']} "):
             raise BuildFailure(f"必须使用 Ruby {VERSIONS['ruby']}", 3)
+        # 回读实际激活的 gem 及路径，不能只以安装清单或版本字符串作为工具链证据。
+        _, activated_text = self.run("ruby-activated-gems", ["ruby", "-e", 'require "cocoapods"; require "xcodeproj"; require "json"; puts JSON.generate(%w[cocoapods xcodeproj].to_h { |name| spec = Gem.loaded_specs.fetch(name); [name, {version: spec.version.to_s, path: spec.full_gem_path}] })'])
+        activated_gems = json.loads(activated_text)
+        if any(activated_gems.get(name, {}).get("version") != VERSIONS[name] for name in ["cocoapods", "xcodeproj"]):
+            raise BuildFailure("Ruby 实际激活的 CocoaPods/xcodeproj 与固定版本不一致", 3)
         for package in ["cmake", "ninja"]:
             try:
                 actual = importlib.metadata.version(package)
@@ -305,7 +320,7 @@ class Runner:
             raise BuildFailure("PATH 中 CMake/Ninja 与固定 Python 分发不一致", 3)
         _, selected = self.run("xcode-selection", ["xcode-select", "-p"])
         _, sdk = self.run("sdk-version", ["xcrun", "--sdk", "macosx" if self.result["platform"] == "macos" else "iphoneos", "--show-sdk-version"])
-        self.result["tools"] = {"expected_versions": VERSIONS, "paths": paths, "flutter": flutter, "xcode": xcode.strip(), "developer_directory": selected.strip(), "sdk": sdk.strip(), "python": sys.version, "host_architecture": platform.machine()}
+        self.result["tools"] = {"expected_versions": VERSIONS, "paths": paths, "flutter": flutter, "xcode": xcode.strip(), "developer_directory": selected.strip(), "sdk": sdk.strip(), "python": sys.version, "host_architecture": platform.machine(), "ruby_activation": {"path": str(self.ruby_activation), "sha256": sha256(self.ruby_activation), "gems": activated_gems}}
 
     def source_status(self) -> str:
         command = ["git", "status", "--porcelain", "--untracked-files=normal", "--", "."]
