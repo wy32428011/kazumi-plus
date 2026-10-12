@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | macOS | macOS 12，arm64 + x86_64 | app.kazumiplus.client | 工程与检查脚本已实现，待个人仓库云构建 |
 | iOS/iPadOS | iOS 15，arm64 | app.kazumiplus.client | 工程与 unsigned IPA 脚本已实现，待个人仓库云构建 |
-| 安卓电视/盒子 | API 24，arm64-v8a + armeabi-v7a | app.kazumiplus.client.tv | Release 与双 ABI/专用签名后验通过；内容区 Left 回侧栏修复重建与最终运行核验继续记录 |
+| 安卓电视/盒子 | API 24，arm64-v8a + armeabi-v7a | app.kazumiplus.client.tv | b0599693 实播/媒体键/冷续播/焦点通过；规则搜索确认输入修复重建与最终异常核验继续记录 |
 
 工程已存在、静态检查通过、构建通过、实际播放通过分别记录。没有设备的真机项目保留待验收。
 
@@ -85,7 +85,7 @@ iOS IPA 必须含 `Payload/Kazumi Plus.app`，为 ARM64 真机目标且应用无
 | `Kazumi-Plus-0.1.0-multiplatform-20261013-android-arm64.apk` | 30,588,421 | `e56d4d63616dea29a9bf3735318a846015ddad157e825cbb5b037e19c689ccc5` |
 | `Kazumi-Plus-0.1.0-multiplatform-20261013-windows-x64.zip` | 40,605,246 | `0b09702dfbd7a28555d5f02336ce8a57dc4c36447fd3db9617c2100560251ef0` |
 
-Windows ZIP 的 65 个构建文件及 LICENSE 共 66/66 条目逐流验证通过。主 SHA256SUMS 对实际 9 个分发文件读回一致；旧包未改，旧 Windows ZIP 摘要已纠正，日期专用 sources 摘要 3/3 一致。构建来源、工具版本、签名指纹及日志路径见 `dist/multi-platform-build-20261013.json`。
+Windows ZIP 的 65 个构建文件及 LICENSE 共 66/66 条目逐流验证通过。本地首批主 SHA256SUMS 对当时 9 个分发文件读回一致；旧包未改，旧 Windows ZIP 摘要已纠正，日期专用 sources 摘要 3/3 一致。构建来源、工具版本、签名指纹及日志路径见 `dist/multi-platform-build-20261013.json`。后续电视包和源码快照完成后，主清单按实际文件重新汇总。
 
 Android 手机回归使用真实 ARM64 Release 包，设备实际 `base.apk` 摘要与分发包一致；运行环境为 API36 x86_64 模拟器及 `libndk_translation.so`，不称为 ARM 真机。保数据安装后和冷启动后的三条旧片单均保留；电视剧第1集从 28:52 冷续播，日志确认位置 1732000ms 与 1920×1080 解码，画面前进后正常退出保存 34:57。电影旧进度 15:32 保留，续播确认 932000ms 与 1920×1080，前进并保存 15:50。证据为 `.tools/logs/mobile-regression-20261013/summary.json` 与同目录截图/脱敏日志。开发设备此前安装 x64 Debug versionCode14，本次仅在该隔离模拟器使用保数据 `install -r -d` 安装 ARM64 Release versionCode12；没有卸载原数据，保留原手机发布版本策略。
 
@@ -96,3 +96,9 @@ Windows 首次暴风国产剧目录出现一次 12 秒 receiveTimeout；保留�
 电视 Debug 已用遥控器完成首启、三频道入口、电视剧搜索/详情/收藏、播放暂停、进度 ±10 秒、1.25 倍速、线路/选集、媒体键、前后集与两次返回、卡片焦点恢复及冷启动流程。媒体键状态同时回读 Android media_session，影视样本实际 1920×1080 出画；最终 ARM Release 运行、电影/动漫及异常场景按电视验收摘要继续记录，未完成项不冒充通过。
 
 最终遥控器核验发现嵌套 RouterOutlet 的内容焦点范围默认在方向边界停止，导致 Left 无法回到侧栏。修复仅为电视内容区添加专属方向策略：先沿用正常遍历，只有当前有效内容页的真实左边界才返回选中入口；排除弹层、被覆盖路由和文本编辑，保留播放器叶层快退处理。具体代码已独立静态交叉审查，运行通过项待新包读回后追加。
+
+新电视制品单独固定到 `b05996934ee48a00e5350a97732d1a77081e3f46`；TV Debug、TV Release 均退出 0，干净来源清单内容摘要为 `84dc1bcab8817542dd5f92a804d30179e65dd9d7d4526d71fe11e33abb61adf2`。正式新包 `dist/Kazumi-Plus-0.1.0-tv-20261013-b0599693-android-arm.apk` 为 50,673,438 字节，SHA256 `7715a5291d780eda1e96fd280a00976cbbfe8e977e6a2daef23f537046ae5de4`；包名 `app.kazumiplus.client.tv`，versionCode 1，仅 ARM64/ARMv7，各有 libapp/libflutter/libech_http/libmpv 四个主要原生库。专用签名身份保持不变；独立清单为 `dist/tv-build-20261013-b0599693.json`、`dist/tv-source-manifest-20261013-b0599693.json` 与 `dist/SHA256SUMS-tv-20261013-b0599693.txt`，3/3 摘要读回一致。最终运行证据另记，不把构建清单的 pending 状态算作运行通过。
+
+b0599693 的真实 ARM64 Release 已在 API36 x64/NDK 转换环境安装，实际 base.apk 摘要一致且无 DEBUGGABLE。遥控器首启、电视剧 1920×1080 实播、系统 media_session 暂停与精确 +10 秒/继续播放、收藏和冷续播通过；退出保存 0:59，冷启详情保留该值，再播起点 59000ms 并实际推进。片单及“我的”内容区 Left 回侧栏通过，动漫详情与来源查询可访问。证据为 `.tools/logs/tv-release-acceptance-20261013-b0599693/`；完整结论以最终摘要为准。
+
+后续规则页核验观察到原生搜索框一获焦就进入 IME，方向键用于编辑，增加到达上方规则动作的困难。仅电视规则搜索改用媒体搜索已有的 `TvSearchBox`：先方向聚焦按钮、确认后输入、提交返回搜索按钮，独立清除动作恢复全列表；手机/桌面保留即时 TextField 过滤。具体差异独立静态审查通过，不将旧入口断言为必然不可达。该修复的新 TV Release 来源与运行结果待构建后另记，播放与存储核心没有修改。

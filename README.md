@@ -109,20 +109,20 @@ Windows 用户完整解压 ZIP 后运行 `kazumi_plus.exe`。分发到其他电�
 
 电视版使用独立 `app.kazumiplus.client.tv` 包名和遥控器界面，三类内容复用现有资料、规则、收藏与播放内核。新增“从网址导入”支持下载预览后确认保存；电视提供内置规则、规则仓库与网址导入。缺少系统 WebView 时仍能启动，网页解析来源显示原因并允许换源。
 
-本轮首批包绑定源码提交 `880f0541a1eaec64b18d7cc38896678cd649611c`。四目标串行构建、签名/包名/架构及源码清单后验均退出 0；电视发布包仅含 ARM64、ARMv7，两组播放原生库齐全。Windows、手机包保持该来源；电视内容区 Left 回侧栏的焦点修复正在另批重建，旧电视候选不作为最终遥控器验收通过包。后续文档提交不会改变既有包的来源。
+Windows、手机包绑定源码提交 `880f0541a1eaec64b18d7cc38896678cd649611c`；新电视包包含内容区 Left 回侧栏的焦点修复，单独绑定 `b05996934ee48a00e5350a97732d1a77081e3f46`。各自串行构建、签名/包名/架构及干净源码清单后验均退出 0；电视发布包仅含 ARM64、ARMv7，两组播放原生库齐全。后续文档提交不会改变既有包的来源。
 
 | 平台 | 当前分发文件 | 验证结果 |
 | --- | --- | --- |
-| Android TV / Google TV / 安卓盒子 | [电视 ARM 构建候选](dist/Kazumi-Plus-0.1.0-android-tv-arm.apk) | Release 与专用签名通过；焦点修复重建及最终遥控器运行核验继续记录 |
+| Android TV / Google TV / 安卓盒子 | [电视 ARM 运行候选](dist/Kazumi-Plus-0.1.0-tv-20261013-b0599693-android-arm.apk) | 实播、媒体键、冷续播与侧栏焦点通过；规则搜索确认输入修复重建及最终异常核验继续记录 |
 | Android 手机 | [手机 ARM64 APK](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-android-arm64.apk) | 实际 ARM64 Release 包在 x64 模拟器转换环境中完成旧片单保留、电视剧/电影续播与保存；真机待验 |
 | Windows x64 | [Windows 便携 ZIP](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-windows-x64.zip) | ZIP 66/66 文件摘要核对通过；解压包的影视播放、旧收藏及退出重启进度回读通过 |
 | macOS / iOS | 暂无安装包 | 工程和检查脚本完成；待个人仓库云构建 |
 
-当前全部分发文件的实际校验值见 [SHA256SUMS.txt](dist/SHA256SUMS.txt)，本批构建来源见 [平台构建清单](dist/multi-platform-build-20261013.json)。旧包全部保留；旧 Windows ZIP 的过时校验值已按实际文件纠正。详细命令、固定工具链、产物检查和运行边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
+Windows、手机及首批文件的实际校验值见 [SHA256SUMS.txt](dist/SHA256SUMS.txt)，本批来源见 [平台构建清单](dist/multi-platform-build-20261013.json)。新电视另有 [构建清单](dist/tv-build-20261013-b0599693.json) 和 [专用校验和](dist/SHA256SUMS-tv-20261013-b0599693.txt)。旧包全部保留；旧 Windows ZIP 的过时校验值已按实际文件纠正。详细命令、固定工具链、产物检查和运行边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
 
 首版历史任务状态与环境证据见 [实施记录](docs/kazumi-plus-implementation.md)。2026-10-12 的 Windows 验收曾由用户中止；2026-10-13 按多平台方案另行验证本批新 ZIP，已完成电视剧/电影出画、续播和重启持久化。各次验收按对应包与源码区分。构建通过、HLS 清单可达、实际画面和音频实测分别记录；按照本次需求未新增或运行全套自动化测试。
 
-首版旧包 `dist/Kazumi-Plus-0.1.0-windows-x64.zip`、`dist/Kazumi-Plus-0.1.0-android-arm64.apk` 保留供历史对照；本轮使用上表带 `multiplatform-20261013` 的新包及电视 APK。手机版 Release 延续原调试证书，电视 Release 使用专用发布证书；ARM 真机运行尚未验证。
+首版旧包 `dist/Kazumi-Plus-0.1.0-windows-x64.zip`、`dist/Kazumi-Plus-0.1.0-android-arm64.apk` 及前次 `dist/Kazumi-Plus-0.1.0-android-tv-arm.apk` 保留供历史对照；本轮使用上表带日期与来源标识的新包。手机版 Release 延续原调试证书，电视 Release 使用专用发布证书；ARM 真机运行尚未验证。
 
 已知来源边界：暴风某些剧集的插播使用独立 PTS 时间轴，插播期间退出可能保存偏低的进度。已确认首集约300.68秒断点样本；初始化续播定位与这个来源断点分别记录。现有来源广告过滤开关可配置，但该断点的修复尚未计为通过，未把候选过滤设置默认写入预置规则。
 

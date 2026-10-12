@@ -21,6 +21,8 @@ import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/plugin/plugin_import_parser.dart';
+import 'package:kazumi/services/platform/platform_environment_service.dart';
+import 'package:kazumi/television/tv_focus.dart';
 
 class PluginViewPage extends StatefulWidget {
   const PluginViewPage({super.key, required this.controller});
@@ -307,22 +309,45 @@ class _PluginViewPageState extends State<PluginViewPage> {
                         ],
                       ),
                       const SizedBox(height: 20),
-                      TextField(
-                        controller: _search,
-                        onChanged: (_) => setState(() {}),
-                        decoration: ruleInputDecoration(
-                          context,
-                          hint: '搜索名称或站点',
-                          prefix: const Icon(Icons.search_rounded),
-                          suffix: query.isEmpty
-                              ? null
-                              : IconButton(
+                      // 电视先确认再输入，方向导航经过搜索时不会唤起键盘。
+                      if (PlatformEnvironmentService.isTelevision)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TvSearchBox(
+                                controller: _search,
+                                hint: '搜索名称或站点',
+                                onSubmitted: (_) => setState(() {}),
+                              ),
+                            ),
+                            if (query.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: IconButton(
                                   tooltip: '清除搜索',
                                   onPressed: () => setState(_search.clear),
                                   icon: const Icon(Icons.close_rounded),
                                 ),
+                              ),
+                          ],
+                        )
+                      else
+                        TextField(
+                          controller: _search,
+                          onChanged: (_) => setState(() {}),
+                          decoration: ruleInputDecoration(
+                            context,
+                            hint: '搜索名称或站点',
+                            prefix: const Icon(Icons.search_rounded),
+                            suffix: query.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: '清除搜索',
+                                    onPressed: () => setState(_search.clear),
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
