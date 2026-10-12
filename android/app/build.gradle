@@ -73,6 +73,18 @@ android {
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+
+        // 通用 APK 必须按本次 Flutter 目标过滤全部原生依赖，避免残留不可运行的额外 ABI。
+        // 拆分 APK 的 ABI 由 Flutter splits 配置负责，不能同时设置 ndk.abiFilters。
+        if (!project.findProperty('split-per-abi')?.toString()?.toBoolean() && project.hasProperty('target-platform')) {
+            def abiByPlatform = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
+            def requestedAbis = project.property('target-platform').toString().split(',').collect { abiByPlatform[it] }
+            if (requestedAbis.any { it == null }) throw new GradleException('构建包含未知 Android 目标架构。')
+            ndk {
+                abiFilters.clear()
+                abiFilters.addAll(requestedAbis)
+            }
+        }
     }
 
     signingConfigs {
