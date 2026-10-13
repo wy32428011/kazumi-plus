@@ -6,8 +6,8 @@
 
 | 平台 | 下限与架构 | 应用身份 | 当前状态 |
 | --- | --- | --- | --- |
-| macOS | macOS 12，arm64 + x86_64 | app.kazumiplus.client | 已实际云编译，正在修正原生资产下限后重建验收 |
-| iOS/iPadOS | iOS 15，arm64 | app.kazumiplus.client | 已实际云编译，真实新增工作区锁已冻结，正式制品核验中 |
+| macOS | macOS 12，arm64 + x86_64 | app.kazumiplus.client | Universal DMG构建、全部原生切片、实际挂载/签名/云启动通过；真实Mac播放待验 |
+| iOS/iPadOS | iOS 15，arm64 | app.kazumiplus.client | 未签名IPA构建、完整原生包体及本地回读通过；未安装到真机 |
 | 安卓电视/盒子 | API 24，arm64-v8a + armeabi-v7a | app.kazumiplus.client.tv | 最终 60096ad9 Release 的影视、规则与冷启动限定核验通过；真实电视与 WebView 缺失未验 |
 
 工程已存在、静态检查通过、构建通过、实际播放通过分别记录。没有设备的真机项目保留待验收。
@@ -59,7 +59,7 @@ bash scripts/build_apple.sh ios
 
 macOS 要求全部随包 Mach-O 包含 arm64/x86_64，最低系统不高于 12；签名从内层库到外层应用执行。云端启动仅证明主机架构下进程与动态库可用，真实 Mac 播放及 Intel 真机另验。DMG 使用 ad-hoc 签名，未做 Developer ID 公证；安装文档按系统首次打开流程说明。
 
-生成 DMG 后，在 Mac 上挂载并把 `Kazumi Plus.app` 复制到应用程序目录。系统对未公证应用的首次打开处理随 macOS 版本变化，按 [Apple 官方打开说明](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac) 操作。本任务当前尚未产生 DMG，不将这段安装说明算作 Mac 运行验收。
+在 Mac 上挂载 DMG 并把 `Kazumi Plus.app` 复制到应用程序目录。系统对未公证应用的首次打开处理随 macOS 版本变化，按 [Apple 官方打开说明](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac) 操作。最终DMG已实际只读挂载和校验，但这段安装说明及云端启动不算作真实Mac播放验收。
 
 iOS IPA 必须含 `Payload/Kazumi Plus.app`，为 ARM64 真机目标且应用无 provisioning profile。未签名 IPA 不作为安装或播放证明；本轮不进行个人签名、TestFlight、商店提交或真机侧载。
 
@@ -69,7 +69,7 @@ iOS IPA 必须含 `Payload/Kazumi Plus.app`，为 ARM64 真机目标且应用无
 
 新产物关联源码提交、工具版本、日志和 SHA256；统一清单最后按实际交付文件重算。旧 Windows/Android 包不冒充新源码构建。既有来源 HLS 插播 PTS 断点继续作为来源边界记录。
 
-用户已授权创建个人 GitHub 仓库，首期仅上传 Actions Artifacts。用户完成登录后，已创建 [wy32428011/kazumi-plus 私有仓库](https://github.com/wy32428011/kazumi-plus)，以独立 `plus` remote 推送 `main`，原上游 `origin` 保留。真实 bootstrap 已完成并回传依赖锁；正式 Apple 构建与产物检查按下文云运行记录继续推进，不把编译成功或失败候选当作合格安装包。
+用户已授权创建个人 GitHub 仓库，首期仅上传 Actions Artifacts。用户完成登录后，已创建 [wy32428011/kazumi-plus 私有仓库](https://github.com/wy32428011/kazumi-plus)，以独立 `plus` remote 推送 `main`，原上游 `origin` 保留。真实 bootstrap、正式构建和产物交付已完成，历次运行与最终结果见下文；编译成功和失败候选分别记录，不混为合格安装包。
 
 2026-10-13 静态核验：全仓 `flutter analyze --no-fatal-infos --fatal-warnings` 退出 0，0 error、0 warning，17 条原有 info。后续音频 owner/中断修正的两文件定向分析也为 No issues found。Apple plist/XML、图标尺寸、脚本语法及 actionlint 已通过；尚未将这些结果当作安装包或播放验收通过。
 
@@ -115,7 +115,9 @@ b0599693 的真实 ARM64 Release 已在 API36 x64/NDK 转换环境安装，实�
 
 `2d0084ce` 阶段通过模拟器 60000ms 网络延迟实际触发目录超时；恢复 0ms 后，原刷新入口重试成功。这证明模拟延迟超时恢复，不是物理断网实测。唯一 WebView 提供者停用尝试被 Android 系统自动恢复，缺失条件没有成立；恢复原 default 状态后回读，WebView 缺失场景仍为未验。
 
-证据分别为 `.tools/logs/tv-release-acceptance-20261013-b0599693/summary.json`、`.tools/logs/tv-release-acceptance-20261013-2d0084ce/summary.json` 及 `.tools/logs/tv-release-acceptance-20261013-60096ad9/`。b059 Release 的遥控器首启、精确 +10000ms 和冷续播结果保留；倍速与切集来自更早 Debug 阶段的 `.tools/logs/tv-acceptance-5346/`，不冒称发行包新验收。最终包只声称实际重新核验的范围。动漫详情和来源查询已访问，动漫实播、缺少 WebView 的真实设备、物理电视硬解、音画同步与长时间播放均未完成。
+证据分别为 `.tools/logs/tv-release-acceptance-20261013-b0599693/summary.json`、`.tools/logs/tv-release-acceptance-20261013-2d0084ce/summary.json` 及 `.tools/logs/tv-release-acceptance-20261013-60096ad9/`。b059 Release 的遥控器首启、精确 +10000ms 和冷续播结果保留；倍速与切集来自更早 Debug 阶段的 `.tools/logs/tv-acceptance-5346/`，不冒称发行包新验收。最终包只声称实际重新核验的范围；缺少 WebView 的真实设备、物理电视硬解、音画同步与跨来源长时间稳定性未验证。
+
+最终包另行补充动漫实播：遥控器进入《FX战士久留美》详情，选择7sefun第01集后实际出画，截图为5:58/23:45；后续另一清晰画面为12:22，媒体暂停键127使系统会话变为PAUSED，读回742992ms及该作品/集数/来源元数据。只核验这一实际来源样本，没有把来源搜索结果或其它来源可达当作实播。原600阶段摘要保留当时边界，后续补充记录使用同目录 `anime-supplement.json` 与 `anime-*.png`，不改写旧阶段结果。
 
 任务专属电视 AVD 在核实名称 `KazumiPlus_TV_API36` 后已关闭并保留用户数据；手机版回归 AVD 与 Windows 验收窗口也已结束。构建快照内的 runtime pending 保留原值，后续实际运行状态由独立摘要说明。
 
@@ -132,3 +134,20 @@ b0599693 的真实 ARM64 Release 已在 API36 x64/NDK 转换环境安装，实�
 Mac 最低系统适配仅在当前 job 的私有固定 SDK 副本执行：严格验证 Flutter revision 和原文件 SHA256 `197de2e6aabb6ec2098659927d90a862139257ff01037a5e6ec34412a63fb57c`，将原生资产默认13改为12，并验证修改后 SHA256 `129b422ba6569208313d34de25c5e3023a3cd31aef203d94ff381ffdb7cb87be`。清除副本旧工具快照后真正重建，结果记录 `modified_sdk=true`、源码补丁、新快照摘要和临时副本清理；不改共享缓存或成品 Mach-O 标记。第四轮 Mac 的双架构、全部切片最低12、ad-hoc签名、启动、DMG创建和hdiutil校验已通过。
 
 第四轮 Mac 上传阶段耗时22分钟后因 Node 堆耗尽失败，没有可下载的 Mac Artifact。打包暂存目录的 `Applications -> /Applications` 快捷链接导致跟随符号链接的上传工具扫描宿主应用。现将该快捷链接限定在 `hdiutil create/verify` 的 try/finally 作用域，完成或失败即从上传暂存目录移除；已封装 DMG 内仍含安装快捷链接。仅重跑 Mac 正式目标，iOS 合格包和所有旧证据保留，Mac 成品等待成功上传后的读回。
+
+## 最终 Apple 成品交付
+
+第五轮 `38350132165` 已证明上传修复生效：537个文件约14秒完成，源码 `535ffa7e`。该轮DMG未执行实际挂载读回，作为中间成功候选保留；最终包追加真实只读挂载门禁后采用第六轮结果。
+
+最终 [macOS run 38354548818](https://github.com/wy32428011/kazumi-plus/actions/runs/38354548818) 为 success，源码 `cfd5a774ef5c14b94149cd24d017ab266233e032`、`source_dirty=false`，构建后源码状态为空。云Artifact ZIP摘要 `7366d5096b3786107f3f2cf2192beccb4bf94aba20bac8e93e05500e96c6d727` 与服务端digest一致。实际DMG包含29个原生Mach-O文件，每个均有arm64+x86_64且最低系统不超过12；上传内部链接展开后的85条本地原生路径也逐项核对，两端记录与原始29个文件的字节/切片一致。
+
+DMG在云端实际 `hdiutil attach -readonly -nobrowse` 挂载到本任务临时目录，确认卷确为只读，读取卷内 `Kazumi Plus.app` 的完整结构和全部原生文件，报告与打包前完全一致；挂载应用 `codesign --verify --deep --strict` 通过。最后实际卸载磁盘并清理空挂载点，`read_only`、`binaries_equal_staged_app`、`signature_verified`、`detached`、`mountpoint_cleaned` 均为true。ARM64云主程序观察25.017秒，无提前退出或致命加载标记，随后由脚本结束；Intel实机、macOS12实机UI及播放未验证。
+
+| 本地成品 | 字节数 | SHA256 | 实际来源 |
+| --- | ---: | --- | --- |
+| `Kazumi-Plus-0.1.0-apple-20261013-cfd5a774-macos-universal.dmg` | 59,637,188 | `44742e7ff0a23cdadd1bef33859006e9534d3a44c5cb998ef3d3103af99e8e8c` | macOS `cfd5a774` / run38354548818 |
+| `Kazumi-Plus-0.1.0-apple-20261013-dbc5e522-ios-arm64-unsigned.ipa` | 26,780,945 | `a52ec8fc59384028c68abe8ea6f46baea9c968311729851f27577ce837842256` | iOS `dbc5e522` / run38343896839 |
+
+两个成品均复制到本地 `dist/` 并再次核对实际SHA。`dist/apple-build-20261013.json` 分平台记录真实提交、run/job/artifact、ZIP digest、源码清单、签名、启动、挂载及私有SDK适配信息。完整小证据在 `dist/apple-evidence-20261013/{ios,macos}/`，独立校验在 `dist/SHA256SUMS-apple-20261013.txt`。Mac源码清单内容摘要为 `63ea61951ff14c3b94b52634c3e98ae7d13e1e8c7018888add982640f2aa97f3`；iOS为 `2e188f791d6df84eed32aaba43b1313afda7bbe0809e5f4e41bb5cc3f7481c53`，不冒称两包来自同一个源码提交。
+
+DMG为ad-hoc签名且未公证；IPA应用未签名、无provisioning profile，其内原生框架可能带ad-hoc签名。iOS仅完成构建交付，不包含安装、启动或播放。Apple首期产物交付完成，实机验证边界仍保留。Windows/手机 `880f`、电视 `60096ad9` 的既有运行证据不被Apple脚本后续提交替换。

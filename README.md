@@ -17,7 +17,7 @@
 
 电视剧只使用来源实际提供的季结构；缺少季信息时显示来源剧集。当前可用集数不代表整季完结总集数。电影使用正片或来源版本，评分等缺失字段不补造。
 
-Windows、Android 手机版与安卓电视版已完成本地构建和限定运行核验。个人[私有源码仓库](https://github.com/wy32428011/kazumi-plus)已创建并推送，macOS、iOS/iPadOS 已完成真实云依赖解析，正式制品核验继续进行；当前结果与验收边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
+Windows、Android 手机版与安卓电视版已完成本地构建和限定运行核验。个人[私有源码仓库](https://github.com/wy32428011/kazumi-plus)已创建并推送，macOS Universal DMG 与 iOS/iPadOS 未签名 IPA 已完成真实云构建、产物检查和本地文件回读；当前结果与验收边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
 
 ## 使用与数据隔离
 
@@ -105,7 +105,7 @@ Windows 用户完整解压 ZIP 后运行 `kazumi_plus.exe`。分发到其他电�
 
 ### macOS、iOS 与安卓电视版
 
-本轮已实现 macOS 12 起的 Universal DMG 打包流程、iOS 15 起的未签名 ARM64 IPA 打包流程，以及 API 24 起的 Android TV/Google TV/安卓盒子版本。苹果端已接入个人私有仓库，真实 CocoaPods 和 SwiftPM 锁已回读并冻结；首次正式编译完成后，检查发现另一份工作区锁及原生库最低系统不符，正在据实处理并重新构建。iOS 首期范围只到未签名构建，不包括真机安装。
+本轮已交付 macOS 12 起的 Universal DMG、iOS 15 起的未签名 ARM64 IPA，以及 API 24 起的 Android TV/Google TV/安卓盒子版本。苹果端已接入个人私有仓库，真实 CocoaPods 和 SwiftPM 锁已回读并冻结。Mac 包的全部29个原生文件均为双架构，实际只读挂载后的结构与签名检查通过，ARM64云主机启动25秒无致命错误；iOS包的29个原生文件、Payload结构及未签名状态通过检查。本轮不包含真实Mac播放或iPhone/iPad安装。
 
 电视版使用独立 `app.kazumiplus.client.tv` 包名和遥控器界面，三类内容复用现有资料、规则、收藏与播放内核。新增“从网址导入”支持下载预览后确认保存；电视提供内置规则、规则仓库与网址导入。缺少系统 WebView 时仍能启动，网页解析来源显示原因并允许换源。
 
@@ -113,12 +113,19 @@ Windows、手机包绑定源码提交 `880f0541a1eaec64b18d7cc38896678cd649611c`
 
 | 平台 | 当前分发文件 | 验证结果 |
 | --- | --- | --- |
-| Android TV / Google TV / 安卓盒子 | [电视 ARM APK](dist/Kazumi-Plus-0.1.0-tv-20261013-60096ad9-android-arm.apk) | 最终包哈希、保数据升级、影视续播、媒体暂停、规则仓库搜索/清空、导入失败保规则及冷启动回读通过；来源 PTS 与真机边界见下文 |
+| Android TV / Google TV / 安卓盒子 | [电视 ARM APK](dist/Kazumi-Plus-0.1.0-tv-20261013-60096ad9-android-arm.apk) | 最终包哈希、保数据升级、动漫/影视实播、媒体暂停、规则搜索/清空、导入失败保规则及电影冷启动回读通过；来源 PTS 与真机边界见下文 |
 | Android 手机 | [手机 ARM64 APK](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-android-arm64.apk) | 实际 ARM64 Release 包在 x64 模拟器转换环境中完成旧片单保留、电视剧/电影续播与保存；真机待验 |
 | Windows x64 | [Windows 便携 ZIP](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-windows-x64.zip) | ZIP 66/66 文件摘要核对通过；解压包的影视播放、旧收藏及退出重启进度回读通过 |
-| macOS / iOS | 正式制品核验中 | 真实云依赖锁已冻结；处理实际编译后的检查问题，不将失败候选交付为成品 |
+| macOS 12+ | [Universal DMG](dist/Kazumi-Plus-0.1.0-apple-20261013-cfd5a774-macos-universal.dmg) | ARM64+Intel全部原生文件、实际只读挂载、ad-hoc签名和云端启动通过；真实Mac播放待验 |
+| iOS / iPadOS 15+ | [ARM64 未签名 IPA](dist/Kazumi-Plus-0.1.0-apple-20261013-dbc5e522-ios-arm64-unsigned.ipa) | Release构建、29个原生文件、包体及应用未签名状态通过；未安装到真机 |
 
-表中的 Windows/Android 安装包位于本地 `dist/`，该目录不随源码推送。Apple 云制品及证据通过个人仓库的 [Actions 构建页](https://github.com/wy32428011/kazumi-plus/actions/workflows/plus-build.yaml) 交付；首次仅使用私有 Artifacts。
+表中的安装包位于本地 `dist/`，该目录不随源码推送。Apple 云制品及证据通过个人仓库的 [Actions 构建页](https://github.com/wy32428011/kazumi-plus/actions/workflows/plus-build.yaml) 交付；首次仅使用私有 Artifacts，配置保留14天。本地副本不受云端保留期影响。
+
+macOS 成品来源为 `cfd5a774ef5c14b94149cd24d017ab266233e032`，iOS 成品来源为 `dbc5e5227e55ec0714aba1493567a13bf0e26769`。两端按真实构建提交分别记录，后续文档提交不改变安装包来源。Apple签名、架构、最低系统、启动及挂载结果见 [Apple构建清单](dist/apple-build-20261013.json)。
+
+本轮统一文件、实际运行状态与源码快照见 [交付摘要](dist/delivery-20261013.json)。源码ZIP由最终文档提交执行 `git archive`，只含已跟踪源码；构建工具缓存和本地签名私钥不包含在快照中。总校验清单按实际分发文件重新计算，保留旧包的来源和摘要。
+
+在 Mac 上挂载 DMG，将 `Kazumi Plus.app` 拖到「应用程序」。该包使用 ad-hoc 签名，未做 Developer ID 公证；首次打开按 [Apple 官方说明](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac) 处理。iOS IPA 为未签名设备版构建，当前不能直接安装；本轮不提供签名、侧载或商店发布流程。
 
 Windows、手机及首批文件的实际校验值见 [SHA256SUMS.txt](dist/SHA256SUMS.txt)，本批来源见 [平台构建清单](dist/multi-platform-build-20261013.json)。最终电视另有 [构建清单](dist/tv-build-20261013-60096ad9.json) 和 [专用校验和](dist/SHA256SUMS-tv-20261013-60096ad9.txt)。构建清单是构建时快照，实际运行结论单独保存在对应验收摘要中。旧包全部保留；旧 Windows ZIP 的过时校验值已按实际文件纠正。详细命令、固定工具链、产物检查和运行边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
 
