@@ -6,8 +6,8 @@
 
 | 平台 | 下限与架构 | 应用身份 | 当前状态 |
 | --- | --- | --- | --- |
-| macOS | macOS 12，arm64 + x86_64 | app.kazumiplus.client | 工程与检查脚本已实现，待个人仓库云构建 |
-| iOS/iPadOS | iOS 15，arm64 | app.kazumiplus.client | 工程与 unsigned IPA 脚本已实现，待个人仓库云构建 |
+| macOS | macOS 12，arm64 + x86_64 | app.kazumiplus.client | 已实际云编译，正在修正原生资产下限后重建验收 |
+| iOS/iPadOS | iOS 15，arm64 | app.kazumiplus.client | 已实际云编译，真实新增工作区锁已冻结，正式制品核验中 |
 | 安卓电视/盒子 | API 24，arm64-v8a + armeabi-v7a | app.kazumiplus.client.tv | 最终 60096ad9 Release 的影视、规则与冷启动限定核验通过；真实电视与 WebView 缺失未验 |
 
 工程已存在、静态检查通过、构建通过、实际播放通过分别记录。没有设备的真机项目保留待验收。
@@ -115,7 +115,7 @@ b0599693 的真实 ARM64 Release 已在 API36 x64/NDK 转换环境安装，实�
 
 `2d0084ce` 阶段通过模拟器 60000ms 网络延迟实际触发目录超时；恢复 0ms 后，原刷新入口重试成功。这证明模拟延迟超时恢复，不是物理断网实测。唯一 WebView 提供者停用尝试被 Android 系统自动恢复，缺失条件没有成立；恢复原 default 状态后回读，WebView 缺失场景仍为未验。
 
-证据分别为 `.tools/logs/tv-release-acceptance-20261013-b0599693/summary.json`、`.tools/logs/tv-release-acceptance-20261013-2d0084ce/summary.json` 及 `.tools/logs/tv-release-acceptance-20261013-60096ad9/`。b059 的遥控器首启、精确 +10000ms、切集/倍速等前期结果保留；最终包只声称实际重新核验的范围。动漫详情和来源查询已访问，动漫实播、缺少 WebView 的真实设备、物理电视硬解、音画同步与长时间播放均未完成。
+证据分别为 `.tools/logs/tv-release-acceptance-20261013-b0599693/summary.json`、`.tools/logs/tv-release-acceptance-20261013-2d0084ce/summary.json` 及 `.tools/logs/tv-release-acceptance-20261013-60096ad9/`。b059 Release 的遥控器首启、精确 +10000ms 和冷续播结果保留；倍速与切集来自更早 Debug 阶段的 `.tools/logs/tv-acceptance-5346/`，不冒称发行包新验收。最终包只声称实际重新核验的范围。动漫详情和来源查询已访问，动漫实播、缺少 WebView 的真实设备、物理电视硬解、音画同步与长时间播放均未完成。
 
 任务专属电视 AVD 在核实名称 `KazumiPlus_TV_API36` 后已关闭并保留用户数据；手机版回归 AVD 与 Windows 验收窗口也已结束。构建快照内的 runtime pending 保留原值，后续实际运行状态由独立摘要说明。
 
@@ -126,3 +126,9 @@ b0599693 的真实 ARM64 Release 已在 API36 x64/NDK 转换环境安装，实�
 第二轮 [bootstrap 38325841491](https://github.com/wy32428011/kazumi-plus/actions/runs/38325841491) 固定到 `395293809d0ac7ea246415684568f059196b3fec`，Mac/iOS job 均 success。结果明确为 `dependency_locks_generated_pending_freeze` / 退出78；只生成真实锁，不产生成品。两个 Artifact ZIP 摘要与服务端 digest 一致。回读 macOS Pod 锁 `4295ab8e2f025032939994c21ab25845b618ff244656455ec77825bbdf2f22f7`、iOS Pod 锁 `8c65b3d0f269693e4d5cb438f3ab3a4358b80f4f730a713182b64053b14cb559` 和项目工作区 SwiftPM 锁 `da9cca960dd7d3cf2d66f3bda1bc564131ef8059193b4ee46d86204be88cdf4c`，tracked 源码迁移为0、pubspec.lock不变；三份锁原样纳入 `5aa76cf409d67eaa6c59a1f799dc8964f8fcbdae`。
 
 第三轮 [正式构建 38334552951](https://github.com/wy32428011/kazumi-plus/actions/runs/38334552951) 的 Mac/iOS Flutter 编译均退出0，随后按门槛阻断。iOS 新生成应用工作区同内容 SwiftPM 锁，需要将真实生成文件补入冻结；Mac 实际检查发现三个原生资产库的两种架构最低系统13，违反约定的12。正在依据实际日志处理并重建；失败候选和日志保留，不作为合格 DMG/IPA 交付。
+
+第四轮 [正式构建 38343896839](https://github.com/wy32428011/kazumi-plus/actions/runs/38343896839) 固定到 `dbc5e5227e55ec0714aba1493567a13bf0e26769`。iOS 已完全通过并下载真实未签名 IPA：26,780,945 字节，SHA256 `a52ec8fc59384028c68abe8ea6f46baea9c968311729851f27577ce837842256`，本地解包的29个Mach-O路径/切片/摘要与云报告一致，最低系统15，应用无签名和 provisioning profile，构建后源码仍干净。该 IPA 保留这一实际来源，不随 Mac 后续修复改写提交。
+
+Mac 最低系统适配仅在当前 job 的私有固定 SDK 副本执行：严格验证 Flutter revision 和原文件 SHA256 `197de2e6aabb6ec2098659927d90a862139257ff01037a5e6ec34412a63fb57c`，将原生资产默认13改为12，并验证修改后 SHA256 `129b422ba6569208313d34de25c5e3023a3cd31aef203d94ff381ffdb7cb87be`。清除副本旧工具快照后真正重建，结果记录 `modified_sdk=true`、源码补丁、新快照摘要和临时副本清理；不改共享缓存或成品 Mach-O 标记。第四轮 Mac 的双架构、全部切片最低12、ad-hoc签名、启动、DMG创建和hdiutil校验已通过。
+
+第四轮 Mac 上传阶段耗时22分钟后因 Node 堆耗尽失败，没有可下载的 Mac Artifact。打包暂存目录的 `Applications -> /Applications` 快捷链接导致跟随符号链接的上传工具扫描宿主应用。现将该快捷链接限定在 `hdiutil create/verify` 的 try/finally 作用域，完成或失败即从上传暂存目录移除；已封装 DMG 内仍含安装快捷链接。仅重跑 Mac 正式目标，iOS 合格包和所有旧证据保留，Mac 成品等待成功上传后的读回。

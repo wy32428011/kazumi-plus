@@ -640,10 +640,15 @@ def build(args: argparse.Namespace) -> int:
                 sign_macos(runner, app, inventory)
                 inventory = inspect_app(app, "macos")
                 runner.result["startup"] = smoke_macos(runner, app, inventory["executable"], args.smoke_seconds)
-                (stage / "Applications").symlink_to("/Applications")
                 artifact = output / f"Kazumi-Plus-{version}-macos-universal-adhoc.dmg"
-                runner.run("package-dmg", ["hdiutil", "create", "-volname", "Kazumi Plus", "-srcfolder", str(stage), "-format", "UDZO", "-ov", str(artifact)], timeout=600)
-                runner.run("verify-dmg", ["hdiutil", "verify", str(artifact)], timeout=180)
+                applications_link = stage / "Applications"
+                applications_link.symlink_to("/Applications")
+                try:
+                    runner.run("package-dmg", ["hdiutil", "create", "-volname", "Kazumi Plus", "-srcfolder", str(stage), "-format", "UDZO", "-ov", str(artifact)], timeout=600)
+                    runner.run("verify-dmg", ["hdiutil", "verify", str(artifact)], timeout=180)
+                finally:
+                    # DMG 已封装安装快捷方式；上传前移除暂存链接，禁止扫描宿主 /Applications。
+                    applications_link.unlink(missing_ok=True)
                 inventory.update(signature="ad_hoc", notarized=False)
                 runner.result["limitations"].append("DMG 使用 ad-hoc 签名，未做 Developer ID 签名或 Apple 公证；云端只启动主机架构。")
             else:

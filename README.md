@@ -118,6 +118,8 @@ Windows、手机包绑定源码提交 `880f0541a1eaec64b18d7cc38896678cd649611c`
 | Windows x64 | [Windows 便携 ZIP](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-windows-x64.zip) | ZIP 66/66 文件摘要核对通过；解压包的影视播放、旧收藏及退出重启进度回读通过 |
 | macOS / iOS | 正式制品核验中 | 真实云依赖锁已冻结；处理实际编译后的检查问题，不将失败候选交付为成品 |
 
+表中的 Windows/Android 安装包位于本地 `dist/`，该目录不随源码推送。Apple 云制品及证据通过个人仓库的 [Actions 构建页](https://github.com/wy32428011/kazumi-plus/actions/workflows/plus-build.yaml) 交付；首次仅使用私有 Artifacts。
+
 Windows、手机及首批文件的实际校验值见 [SHA256SUMS.txt](dist/SHA256SUMS.txt)，本批来源见 [平台构建清单](dist/multi-platform-build-20261013.json)。最终电视另有 [构建清单](dist/tv-build-20261013-60096ad9.json) 和 [专用校验和](dist/SHA256SUMS-tv-20261013-60096ad9.txt)。构建清单是构建时快照，实际运行结论单独保存在对应验收摘要中。旧包全部保留；旧 Windows ZIP 的过时校验值已按实际文件纠正。详细命令、固定工具链、产物检查和运行边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
 
 首版历史任务状态与环境证据见 [实施记录](docs/kazumi-plus-implementation.md)。2026-10-12 的 Windows 验收曾由用户中止；2026-10-13 按多平台方案另行验证本批新 ZIP，已完成电视剧/电影出画、续播和重启持久化。各次验收按对应包与源码区分。构建通过、HLS 清单可达、实际画面和音频实测分别记录；按照本次需求未新增或运行全套自动化测试。
