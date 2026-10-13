@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | macOS | macOS 12，arm64 + x86_64 | app.kazumiplus.client | 工程与检查脚本已实现，待个人仓库云构建 |
 | iOS/iPadOS | iOS 15，arm64 | app.kazumiplus.client | 工程与 unsigned IPA 脚本已实现，待个人仓库云构建 |
-| 安卓电视/盒子 | API 24，arm64-v8a + armeabi-v7a | app.kazumiplus.client.tv | b0599693 实播/媒体键/冷续播/焦点通过；规则搜索确认输入修复重建与最终异常核验继续记录 |
+| 安卓电视/盒子 | API 24，arm64-v8a + armeabi-v7a | app.kazumiplus.client.tv | 最终 60096ad9 Release 的影视、规则与冷启动限定核验通过；真实电视与 WebView 缺失未验 |
 
 工程已存在、静态检查通过、构建通过、实际播放通过分别记录。没有设备的真机项目保留待验收。
 
@@ -69,7 +69,7 @@ iOS IPA 必须含 `Payload/Kazumi Plus.app`，为 ARM64 真机目标且应用无
 
 新产物关联源码提交、工具版本、日志和 SHA256；统一清单最后按实际交付文件重算。旧 Windows/Android 包不冒充新源码构建。既有来源 HLS 插播 PTS 断点继续作为来源边界记录。
 
-用户已授权创建个人 GitHub 仓库，首期仅上传 Actions Artifacts。Chrome 的 GitHub 登录和双重验证尚未完成，验证会话过期后已回到登录页；个人仓库尚未创建、源码尚未推送。Apple bootstrap 与正式云构建均未执行，因此没有 DMG、IPA 或真实 CocoaPods 锁。本地工程与 workflow 审查通过不替代这些构建证据。
+用户已授权创建个人 GitHub 仓库，首期仅上传 Actions Artifacts。用户完成登录后，已创建 [wy32428011/kazumi-plus 私有仓库](https://github.com/wy32428011/kazumi-plus)，以独立 `plus` remote 推送 `main`，原上游 `origin` 保留。真实 bootstrap 已完成并回传依赖锁；正式 Apple 构建与产物检查按下文云运行记录继续推进，不把编译成功或失败候选当作合格安装包。
 
 2026-10-13 静态核验：全仓 `flutter analyze --no-fatal-infos --fatal-warnings` 退出 0，0 error、0 warning，17 条原有 info。后续音频 owner/中断修正的两文件定向分析也为 No issues found。Apple plist/XML、图标尺寸、脚本语法及 actionlint 已通过；尚未将这些结果当作安装包或播放验收通过。
 
@@ -102,3 +102,27 @@ Windows 首次暴风国产剧目录出现一次 12 秒 receiveTimeout；保留�
 b0599693 的真实 ARM64 Release 已在 API36 x64/NDK 转换环境安装，实际 base.apk 摘要一致且无 DEBUGGABLE。遥控器首启、电视剧 1920×1080 实播、系统 media_session 暂停与精确 +10 秒/继续播放、收藏和冷续播通过；退出保存 0:59，冷启详情保留该值，再播起点 59000ms 并实际推进。片单及“我的”内容区 Left 回侧栏通过，动漫详情与来源查询可访问。证据为 `.tools/logs/tv-release-acceptance-20261013-b0599693/`；完整结论以最终摘要为准。
 
 后续规则页核验观察到原生搜索框一获焦就进入 IME，方向键用于编辑，增加到达上方规则动作的困难。仅电视规则搜索改用媒体搜索已有的 `TvSearchBox`：先方向聚焦按钮、确认后输入、提交返回搜索按钮，独立清除动作恢复全列表；手机/桌面保留即时 TextField 过滤。具体差异独立静态审查通过，不将旧入口断言为必然不可达。该修复的新 TV Release 来源与运行结果待构建后另记，播放与存储核心没有修改。
+
+## 最终电视包与分阶段运行证据
+
+最终电视发行包固定到 `60096ad9447899a38154c9076bfcf971b7dd1e5d`，文件 `dist/Kazumi-Plus-0.1.0-tv-20261013-60096ad9-android-arm.apk` 为 50,681,226 字节，SHA256 `e2164a3ff96a6055502852a97886a49c885d013b1633f0b28b541c84188547a0`。真实设备 `base.apk` 摘要一致，ARM64、非 DEBUGGABLE；包名、API24 下限、versionCode1、ARM64/ARMv7 两组原生库及固定发布证书均回读通过。来源清单内容摘要 `51df638f28dcff4ebf8c1bf8184b6ee2561df5195ce25bd6acc76dc1d339e1a9`，构建后工作区干净。
+
+运行环境为官方 Android TV API36 x86_64 模拟器，通过 NDK 转换运行真实 ARM64 Release；不是物理电视硬解验收。最终包保数据升级后，原《蒸蒸日上》在看片单、电视剧历史 1 条与电影历史 1 条保留。初始化续播日志确认电视剧 90000ms、电影正片 496000ms，均为 1920×1080。电影真实画面推进至 16:52，系统媒体暂停后保存 24:45；正常退出播放器再强停应用冷启动，“我的”再次读回两条历史与电影 24:45。
+
+电视剧续播初始化后又出现已知来源广告低 PTS：恢复确认 1:30 后，实际暂停位置为 19463ms，退出保存 0:19。该来源断点仍未修复，不能把初始化成功写成整段播放进度稳定；本轮没有据此修改预置过滤规则或掩盖保存值。电影样本未观察到同类下降。播放控制、音频输出质量、来源时间轴和存储持久化分别记录。
+
+最终包规则仓库遥控器经过搜索按钮不会自动进入 IME，确认后打开输入弹窗；`DM84` 查询过滤为单一结果，独立清除恢复 16 条仓库规则。添加规则中的网址入口可达；无效网址失败显示安全中文原因，确认导入禁用，取消后原 6 条规则保留。规则管理同类过滤与清空在上一阶段 `2d0084ce` 已核验；各阶段分别保存证据，不合并成同一来源包。
+
+`2d0084ce` 阶段通过模拟器 60000ms 网络延迟实际触发目录超时；恢复 0ms 后，原刷新入口重试成功。这证明模拟延迟超时恢复，不是物理断网实测。唯一 WebView 提供者停用尝试被 Android 系统自动恢复，缺失条件没有成立；恢复原 default 状态后回读，WebView 缺失场景仍为未验。
+
+证据分别为 `.tools/logs/tv-release-acceptance-20261013-b0599693/summary.json`、`.tools/logs/tv-release-acceptance-20261013-2d0084ce/summary.json` 及 `.tools/logs/tv-release-acceptance-20261013-60096ad9/`。b059 的遥控器首启、精确 +10000ms、切集/倍速等前期结果保留；最终包只声称实际重新核验的范围。动漫详情和来源查询已访问，动漫实播、缺少 WebView 的真实设备、物理电视硬解、音画同步与长时间播放均未完成。
+
+任务专属电视 AVD 在核实名称 `KazumiPlus_TV_API36` 后已关闭并保留用户数据；手机版回归 AVD 与 Windows 验收窗口也已结束。构建快照内的 runtime pending 保留原值，后续实际运行状态由独立摘要说明。
+
+## Apple 云运行与真实冻结记录
+
+首轮 [run 38321481344](https://github.com/wy32428011/kazumi-plus/actions/runs/38321481344) 固定到 `60096ad9`，实际检查发现已安装 xcodeproj1.27.0 仍被 Ruby 默认激活的 1.28.1 覆盖。`39529380` 为本次 runner 的 Ruby 子进程增加明确激活约束，版本检查、直接 pod 及 Flutter 派生 pod 共用固定环境，并回读实际 gem 版本和目录；没有降低工具门槛。
+
+第二轮 [bootstrap 38325841491](https://github.com/wy32428011/kazumi-plus/actions/runs/38325841491) 固定到 `395293809d0ac7ea246415684568f059196b3fec`，Mac/iOS job 均 success。结果明确为 `dependency_locks_generated_pending_freeze` / 退出78；只生成真实锁，不产生成品。两个 Artifact ZIP 摘要与服务端 digest 一致。回读 macOS Pod 锁 `4295ab8e2f025032939994c21ab25845b618ff244656455ec77825bbdf2f22f7`、iOS Pod 锁 `8c65b3d0f269693e4d5cb438f3ab3a4358b80f4f730a713182b64053b14cb559` 和项目工作区 SwiftPM 锁 `da9cca960dd7d3cf2d66f3bda1bc564131ef8059193b4ee46d86204be88cdf4c`，tracked 源码迁移为0、pubspec.lock不变；三份锁原样纳入 `5aa76cf409d67eaa6c59a1f799dc8964f8fcbdae`。
+
+第三轮 [正式构建 38334552951](https://github.com/wy32428011/kazumi-plus/actions/runs/38334552951) 的 Mac/iOS Flutter 编译均退出0，随后按门槛阻断。iOS 新生成应用工作区同内容 SwiftPM 锁，需要将真实生成文件补入冻结；Mac 实际检查发现三个原生资产库的两种架构最低系统13，违反约定的12。正在依据实际日志处理并重建；失败候选和日志保留，不作为合格 DMG/IPA 交付。

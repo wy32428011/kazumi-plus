@@ -17,7 +17,7 @@
 
 电视剧只使用来源实际提供的季结构；缺少季信息时显示来源剧集。当前可用集数不代表整季完结总集数。电影使用正片或来源版本，评分等缺失字段不补造。
 
-Windows、Android 手机版与安卓电视版已完成本地构建。macOS、iOS/iPadOS 的独立工程和云构建流程已实现，等待个人 GitHub 仓库接入后的实际构建；当前结果与验收边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
+Windows、Android 手机版与安卓电视版已完成本地构建和限定运行核验。个人[私有源码仓库](https://github.com/wy32428011/kazumi-plus)已创建并推送，macOS、iOS/iPadOS 已完成真实云依赖解析，正式制品核验继续进行；当前结果与验收边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
 
 ## 使用与数据隔离
 
@@ -105,20 +105,20 @@ Windows 用户完整解压 ZIP 后运行 `kazumi_plus.exe`。分发到其他电�
 
 ### macOS、iOS 与安卓电视版
 
-本轮已实现 macOS 12 起的 Universal DMG 打包流程、iOS 15 起的未签名 ARM64 IPA 打包流程，以及 API 24 起的 Android TV/Google TV/安卓盒子版本。苹果端等待 Chrome 中的 GitHub 登录和双重验证完成，个人仓库尚未创建，当前没有 DMG 或 IPA；首次云运行先生成并提交真实 CocoaPods 锁，再构建安装包。iOS 首期范围只到未签名构建，不包括真机安装。
+本轮已实现 macOS 12 起的 Universal DMG 打包流程、iOS 15 起的未签名 ARM64 IPA 打包流程，以及 API 24 起的 Android TV/Google TV/安卓盒子版本。苹果端已接入个人私有仓库，真实 CocoaPods 和 SwiftPM 锁已回读并冻结；首次正式编译完成后，检查发现另一份工作区锁及原生库最低系统不符，正在据实处理并重新构建。iOS 首期范围只到未签名构建，不包括真机安装。
 
 电视版使用独立 `app.kazumiplus.client.tv` 包名和遥控器界面，三类内容复用现有资料、规则、收藏与播放内核。新增“从网址导入”支持下载预览后确认保存；电视提供内置规则、规则仓库与网址导入。缺少系统 WebView 时仍能启动，网页解析来源显示原因并允许换源。
 
-Windows、手机包绑定源码提交 `880f0541a1eaec64b18d7cc38896678cd649611c`；新电视包包含内容区 Left 回侧栏的焦点修复，单独绑定 `b05996934ee48a00e5350a97732d1a77081e3f46`。各自串行构建、签名/包名/架构及干净源码清单后验均退出 0；电视发布包仅含 ARM64、ARMv7，两组播放原生库齐全。后续文档提交不会改变既有包的来源。
+Windows、手机包绑定源码提交 `880f0541a1eaec64b18d7cc38896678cd649611c`；最终电视包包含侧栏焦点及规则搜索确认输入修复，单独绑定 `60096ad9447899a38154c9076bfcf971b7dd1e5d`。各自串行构建、签名/包名/架构及干净源码清单后验均退出 0；电视发布包仅含 ARM64、ARMv7，两组播放原生库齐全。后续 Apple 与文档提交不会改变既有包的来源。
 
 | 平台 | 当前分发文件 | 验证结果 |
 | --- | --- | --- |
-| Android TV / Google TV / 安卓盒子 | [电视 ARM 运行候选](dist/Kazumi-Plus-0.1.0-tv-20261013-b0599693-android-arm.apk) | 实播、媒体键、冷续播与侧栏焦点通过；规则搜索确认输入修复重建及最终异常核验继续记录 |
+| Android TV / Google TV / 安卓盒子 | [电视 ARM APK](dist/Kazumi-Plus-0.1.0-tv-20261013-60096ad9-android-arm.apk) | 最终包哈希、保数据升级、影视续播、媒体暂停、规则仓库搜索/清空、导入失败保规则及冷启动回读通过；来源 PTS 与真机边界见下文 |
 | Android 手机 | [手机 ARM64 APK](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-android-arm64.apk) | 实际 ARM64 Release 包在 x64 模拟器转换环境中完成旧片单保留、电视剧/电影续播与保存；真机待验 |
 | Windows x64 | [Windows 便携 ZIP](dist/Kazumi-Plus-0.1.0-multiplatform-20261013-windows-x64.zip) | ZIP 66/66 文件摘要核对通过；解压包的影视播放、旧收藏及退出重启进度回读通过 |
-| macOS / iOS | 暂无安装包 | 工程和检查脚本完成；待个人仓库云构建 |
+| macOS / iOS | 正式制品核验中 | 真实云依赖锁已冻结；处理实际编译后的检查问题，不将失败候选交付为成品 |
 
-Windows、手机及首批文件的实际校验值见 [SHA256SUMS.txt](dist/SHA256SUMS.txt)，本批来源见 [平台构建清单](dist/multi-platform-build-20261013.json)。新电视另有 [构建清单](dist/tv-build-20261013-b0599693.json) 和 [专用校验和](dist/SHA256SUMS-tv-20261013-b0599693.txt)。旧包全部保留；旧 Windows ZIP 的过时校验值已按实际文件纠正。详细命令、固定工具链、产物检查和运行边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
+Windows、手机及首批文件的实际校验值见 [SHA256SUMS.txt](dist/SHA256SUMS.txt)，本批来源见 [平台构建清单](dist/multi-platform-build-20261013.json)。最终电视另有 [构建清单](dist/tv-build-20261013-60096ad9.json) 和 [专用校验和](dist/SHA256SUMS-tv-20261013-60096ad9.txt)。构建清单是构建时快照，实际运行结论单独保存在对应验收摘要中。旧包全部保留；旧 Windows ZIP 的过时校验值已按实际文件纠正。详细命令、固定工具链、产物检查和运行边界见 [多平台实施记录](docs/multi-platform-implementation.md)。
 
 首版历史任务状态与环境证据见 [实施记录](docs/kazumi-plus-implementation.md)。2026-10-12 的 Windows 验收曾由用户中止；2026-10-13 按多平台方案另行验证本批新 ZIP，已完成电视剧/电影出画、续播和重启持久化。各次验收按对应包与源码区分。构建通过、HLS 清单可达、实际画面和音频实测分别记录；按照本次需求未新增或运行全套自动化测试。
 

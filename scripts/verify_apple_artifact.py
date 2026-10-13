@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import importlib.metadata
 import json
@@ -17,6 +18,7 @@ import signal
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -32,6 +34,10 @@ VERSIONS = {
     "cmake_distribution": "3.31.6",
     "ninja_distribution": "1.11.1.4",
 }
+FLUTTER_REVISION = "abaf9c523780a608bd46686fd5e53740a07077f8"
+MACOS_NATIVE_ASSETS_SOURCE = "packages/flutter_tools/lib/src/isolated/native_assets/macos/native_assets.dart"
+MACOS_NATIVE_ASSETS_SOURCE_SHA256 = "197de2e6aabb6ec2098659927d90a862139257ff01037a5e6ec34412a63fb57c"
+MACOS_NATIVE_ASSETS_PATCHED_SHA256 = "129b422ba6569208313d34de25c5e3023a3cd31aef203d94ff381ffdb7cb87be"
 TOOL_SOURCES = {
     "cocoapods": "https://github.com/CocoaPods/CocoaPods/releases/tag/1.16.2",
     "cmake": "https://pypi.org/pypi/cmake/3.31.6/json",
@@ -222,6 +228,7 @@ class Runner:
             self.environment.update(FLUTTER_XCODE_ARCHS="arm64 x86_64", FLUTTER_XCODE_ONLY_ACTIVE_ARCH="NO")
         self.result: dict[str, object] = {"schema_version": 1, "platform": target, "status": "running", "started_at": utc_now(), "commands": [], "tool_sources": TOOL_SOURCES, "artifacts": [], "limitations": ["云端结构检查及进程存活检查不代表真机播放验收。"]}
         self.source_files: list[dict[str, object]] = []
+        self._flutter_sdk_temp: tempfile.TemporaryDirectory | None = None
 
     def run(self, label: str, command: list[str], *, cwd: Path | None = None, timeout: int = 600, check: bool = True, echo: bool = True) -> tuple[int, str]:
         """每步独立日志；超时只回收本脚本创建的进程组。"""
@@ -271,6 +278,60 @@ class Runner:
             raise BuildFailure(f"{label} 失败，原命令退出码 {code}，详见 {log.name}")
         return code, "".join(chunks)
 
+    def prepare_macos_flutter(self) -> None:
+        """只在 Mac 构建的私有 SDK 副本修正 native-assets 下限，原缓存保持原样。"""
+        if self.result["platform"] != "macos":
+            return
+        command = shutil.which("flutter", path=self.environment.get("PATH"))
+        if command is None:
+            raise BuildFailure("缺少固定 Flutter SDK，无法准备 macOS 私有工具链。", 3)
+        original_sdk = Path(command).resolve().parent.parent
+        original_source = original_sdk / MACOS_NATIVE_ASSETS_SOURCE
+        if not (original_sdk / ".git").is_dir() or (original_sdk / ".git").is_symlink():
+            raise BuildFailure("私有 SDK 适配需要独立 Git 目录，不能复用指向外部的 SDK 工作树元数据。", 3)
+        _, revision = self.run("flutter-sdk-base-revision", ["git", "-C", str(original_sdk), "rev-parse", "HEAD"], echo=False)
+        if revision.strip() != FLUTTER_REVISION or not original_source.is_file():
+            raise BuildFailure("macOS native-assets 适配只允许固定 Flutter 3.47.7 revision。", 3)
+        original = original_source.read_bytes()
+        original_hash = hashlib.sha256(original).hexdigest()
+        if original_hash != MACOS_NATIVE_ASSETS_SOURCE_SHA256:
+            raise BuildFailure(f"Flutter native-assets 原文件摘要不符：{original_hash}，拒绝套用不匹配的工具补丁。", 3)
+        old_line = b"const targetMacOSVersion = 13;"
+        new_line = b"const targetMacOSVersion = 12;"
+        if original.count(old_line) != 1:
+            raise BuildFailure("Flutter native-assets 默认值不是唯一的预期定义，拒绝模糊替换。", 3)
+        patched = original.replace(old_line, new_line, 1)
+        if hashlib.sha256(patched).hexdigest() != MACOS_NATIVE_ASSETS_PATCHED_SHA256:
+            raise BuildFailure("Flutter native-assets 补丁结果摘要不符。", 3)
+        self._flutter_sdk_temp = tempfile.TemporaryDirectory(prefix="kazumi-flutter-macos12-")
+        private_sdk = Path(self._flutter_sdk_temp.name).resolve() / "flutter"
+        if private_sdk.is_relative_to(original_sdk) or original_sdk.is_relative_to(private_sdk):
+            raise BuildFailure("私有 Flutter SDK 目录与原缓存重叠，拒绝继续。", 3)
+        shutil.copytree(original_sdk, private_sdk, symlinks=True)
+        private_source = private_sdk / MACOS_NATIVE_ASSETS_SOURCE
+        if not private_source.resolve().is_relative_to(private_sdk):
+            raise BuildFailure("私有 SDK 的目标源文件指向副本外，拒绝修改。", 3)
+        private_source.write_bytes(patched)
+        # 原 snapshot 的缓存键只看 Git revision；必须移除副本缓存，才能编译新默认值。
+        for name in ["flutter_tools.snapshot", "flutter_tools.stamp"]:
+            (private_sdk / "bin/cache" / name).unlink(missing_ok=True)
+        self.environment["FLUTTER_ROOT"] = str(private_sdk)
+        self.environment["PATH"] = str(private_sdk / "bin") + os.pathsep + self.environment.get("PATH", "")
+        patch = "".join(difflib.unified_diff(original.decode("utf-8").splitlines(keepends=True), patched.decode("utf-8").splitlines(keepends=True), fromfile=f"original/{MACOS_NATIVE_ASSETS_SOURCE}", tofile=f"macos12/{MACOS_NATIVE_ASSETS_SOURCE}"))
+        patch_file = self.output / "flutter-sdk-native-assets.patch"
+        patch_file.write_text(patch, encoding="utf-8")
+        if sha256(original_source) != MACOS_NATIVE_ASSETS_SOURCE_SHA256:
+            raise BuildFailure("准备私有副本期间原 Flutter SDK 源文件发生变化。", 3)
+        self.result["flutter_sdk_override"] = {"modified_sdk": True, "scope": "macos_job_private_copy", "base_revision": FLUTTER_REVISION, "original_sdk": str(original_sdk), "private_sdk": str(private_sdk), "source_file": MACOS_NATIVE_ASSETS_SOURCE, "source_before_sha256": MACOS_NATIVE_ASSETS_SOURCE_SHA256, "source_after_sha256": MACOS_NATIVE_ASSETS_PATCHED_SHA256, "patch": patch_file.name, "patch_sha256": sha256(patch_file), "target_macos_version": 12, "original_sdk_source_unchanged": True, "private_sdk_cleaned": False}
+
+    def cleanup_toolchain(self) -> None:
+        """只回收本次创建的临时 SDK，不清理用户 SDK 或 Actions 共享缓存。"""
+        if self._flutter_sdk_temp is not None:
+            self._flutter_sdk_temp.cleanup()
+            self._flutter_sdk_temp = None
+            if "flutter_sdk_override" in self.result:
+                self.result["flutter_sdk_override"]["private_sdk_cleaned"] = True
+
     def toolchain(self) -> None:
         if platform.system() != "Darwin":
             raise BuildFailure("Apple 构建只能在 macOS/Xcode 主机执行；本机未开始编译。", 3)
@@ -278,9 +339,10 @@ class Runner:
             raise BuildFailure("需要 Python 3.10 或更高版本", 3)
         if not self.ruby_activation.is_file():
             raise BuildFailure("缺少 Apple Ruby 工具链激活脚本，拒绝回退到默认 gem 版本。", 3)
+        self.prepare_macos_flutter()
         paths = {}
         for name in ["flutter", "xcodebuild", "xcode-select", "xcrun", "pod", "ruby", "cmake", "ninja", "codesign", "hdiutil", "ditto", "git", "lipo"]:
-            path = shutil.which(name)
+            path = shutil.which(name, path=self.environment.get("PATH"))
             if not path:
                 raise BuildFailure(f"缺少工具：{name}；脚本不会自动安装或升级依赖。", 3)
             resolved = Path(path).resolve()
@@ -289,6 +351,18 @@ class Runner:
         flutter = json.loads(text[text.index("{"):])
         if flutter.get("frameworkVersion") != VERSIONS["flutter"]:
             raise BuildFailure(f"必须使用 Flutter {VERSIONS['flutter']}", 3)
+        if "flutter_sdk_override" in self.result:
+            override = self.result["flutter_sdk_override"]
+            if flutter.get("frameworkRevision") != FLUTTER_REVISION:
+                raise BuildFailure("私有 Flutter SDK 报告的基础 revision 与固定版本不符。", 3)
+            private_sdk = Path(override["private_sdk"])
+            _, changed = self.run("flutter-sdk-patch-state", ["git", "-C", str(private_sdk), "diff", "--name-only"], echo=False)
+            if changed.splitlines() != [MACOS_NATIVE_ASSETS_SOURCE] or sha256(private_sdk / MACOS_NATIVE_ASSETS_SOURCE) != MACOS_NATIVE_ASSETS_PATCHED_SHA256:
+                raise BuildFailure("私有 Flutter SDK 出现预期单点补丁以外的源码变化。", 3)
+            snapshot = private_sdk / "bin/cache/flutter_tools.snapshot"
+            if not snapshot.is_file():
+                raise BuildFailure("私有 Flutter SDK 没有重新生成工具 snapshot。", 3)
+            override.update(snapshot_rebuilt=True, snapshot_sha256=sha256(snapshot))
         _, xcode = self.run("xcode-version", ["xcodebuild", "-version"])
         if xcode.splitlines()[0].strip() != f"Xcode {VERSIONS['xcode']}":
             raise BuildFailure(f"必须选择 Xcode {VERSIONS['xcode']}", 3)
@@ -610,6 +684,10 @@ def build(args: argparse.Namespace) -> int:
                 write_json(output / "failure-dependency-locks/provenance.json", {"qualification": "diagnostic_only_not_frozen", "sha256": changed_locks})
             except Exception as error:
                 runner.result["evidence_archive_error"] = str(error)
+        try:
+            runner.cleanup_toolchain()
+        except OSError as error:
+            runner.result["toolchain_cleanup_error"] = str(error)
         runner.result.update(exit_code=exit_code, finished_at=utc_now())
         write_json(output / "result.json", runner.result)
         hashes = [f"{item['sha256']}  {item['path']}" for item in runner.result["artifacts"]]
