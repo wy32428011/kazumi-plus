@@ -552,6 +552,47 @@ def smoke_macos(runner: Runner, app: Path, executable: str, seconds: int) -> dic
     return report
 
 
+def verify_macos_dmg(runner: Runner, artifact: Path, inventory: dict[str, object]) -> dict[str, object]:
+    """只读挂载最终 DMG，核对实际卷内应用，并回收本次挂载点。"""
+    scratch = Path(tempfile.mkdtemp(prefix="kazumi-dmg-readback-"))
+    mountpoint = scratch / "volume"
+    mountpoint.mkdir()
+    report = {"status": "pending", "artifact_sha256": sha256(artifact), "mountpoint": str(mountpoint), "read_only": False, "detached": False, "mountpoint_cleaned": False}
+    runner.result["dmg_mount"] = report
+    try:
+        runner.run("mount-dmg-readonly", ["hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", str(mountpoint), str(artifact)], timeout=180)
+        if not mountpoint.is_mount() or not os.statvfs(mountpoint).f_flag & os.ST_RDONLY:
+            raise BuildFailure("DMG 未实际挂载为只读卷，拒绝交付。", 7)
+        report["read_only"] = True
+        app = mountpoint / "Kazumi Plus.app"
+        mounted = inspect_app(app, "macos")
+        if mounted != inventory:
+            raise BuildFailure("DMG 卷内应用结构或原生文件与打包报告不一致。", 7)
+        runner.run("verify-mounted-signature", ["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], timeout=180)
+        mounted_report = runner.output / "dmg-mounted-app-verification.json"
+        write_json(mounted_report, mounted)
+        report.update(status="dmg_mount_verified", binaries_equal_staged_app=True, signature_verified=True, macho_count=mounted["macho_count"], mounted_app_inventory=mounted_report.name, mounted_app_inventory_sha256=sha256(mounted_report))
+    except Exception:
+        report["status"] = "failed"
+        raise
+    finally:
+        try:
+            # 只卸载本次独占路径；卸载失败时保留目录，不递归清理仍挂载的卷。
+            if mountpoint.is_mount():
+                runner.run("detach-verified-dmg", ["hdiutil", "detach", str(mountpoint)], timeout=120)
+            if mountpoint.is_mount():
+                raise BuildFailure("DMG 验收后未成功卸载。", 7)
+            report["detached"] = True
+            mountpoint.rmdir()
+            scratch.rmdir()
+            report["mountpoint_cleaned"] = True
+        finally:
+            if not report["detached"] or not report["mountpoint_cleaned"]:
+                report["status"] = "failed"
+            write_json(runner.output / "dmg-mount-verification.json", report)
+    return report
+
+
 def check_ipa_layout(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -649,6 +690,7 @@ def build(args: argparse.Namespace) -> int:
                 finally:
                     # DMG 已封装安装快捷方式；上传前移除暂存链接，禁止扫描宿主 /Applications。
                     applications_link.unlink(missing_ok=True)
+                verify_macos_dmg(runner, artifact, inventory)
                 inventory.update(signature="ad_hoc", notarized=False)
                 runner.result["limitations"].append("DMG 使用 ad-hoc 签名，未做 Developer ID 签名或 Apple 公证；云端只启动主机架构。")
             else:
