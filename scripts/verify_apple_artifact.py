@@ -656,6 +656,12 @@ def build(args: argparse.Namespace) -> int:
             command = ["flutter", "build", args.platform, "--release", "--verbose"]
             if args.platform == "ios":
                 command.append("--no-codesign")
+            update_url = (args.update_url or os.environ.get("KAZUMI_PLUS_UPDATE_URL", "")).strip()
+            if update_url:
+                if not re.match(r"^https?://", update_url):
+                    raise BuildFailure(f"KAZUMI_PLUS_UPDATE_URL 必须是有效的 http/https 地址：{update_url}", 5)
+                command.append(f"--dart-define=KAZUMI_PLUS_UPDATE_URL={update_url}")
+            runner.result["update_url_configured"] = bool(update_url)
             runner.run("apple-build", command, timeout=args.build_timeout)
             verify_lock_hashes(project, hashes)
             runner.verify_source_unchanged()
@@ -757,6 +763,7 @@ def main() -> int:
     builder.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parent.parent)
     builder.add_argument("--output-dir", type=Path)
     builder.add_argument("--bootstrap-pods", action="store_true")
+    builder.add_argument("--update-url", default="")
     builder.add_argument("--build-timeout", type=int, default=3600)
     builder.add_argument("--smoke-seconds", type=int, default=25)
     inspector = subcommands.add_parser("verify", help="只读检查已有 .app 的身份、系统版本和全部 Mach-O 架构")

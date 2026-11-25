@@ -4,7 +4,9 @@ param(
     [ValidateSet('WindowsDebug', 'WindowsRelease', 'AndroidDebug', 'AndroidRelease', 'AndroidTvDebug', 'AndroidTvRelease')]
     [string]$Target = 'WindowsDebug',
     [string]$FlutterRoot = '',
-    [switch]$AllowDirty
+    [switch]$AllowDirty,
+    [string]$EvidenceDirectory = '',
+    [string]$UpdateUrl = ''
 )
 
 # 构建设置仅作用于本次进程，结束后恢复调用者原来的环境变量。
@@ -12,6 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'flutter_version_json.ps1')
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $flutterFileName = if ($isWindowsHost) { 'flutter.bat' } else { 'flutter' }
 
@@ -94,8 +97,20 @@ foreach ($environmentName in $environmentUpdates.Keys) {
 
 $logDirectory = Join-Path $projectRoot '.tools/logs'
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
-$logPath = Join-Path $logDirectory ("build-{0}-{1}.log" -f $Target, (Get-Date -Format 'yyyyMMdd-HHmmss'))
-$evidenceDirectory = Join-Path $logDirectory ("evidence-{0}-{1}" -f $Target, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+# 一键打包显式绑定本次目标证据，避免读取历史构建的结果。
+if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
+    $buildStamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+    $logPath = Join-Path $logDirectory ("build-{0}-{1}.log" -f $Target, $buildStamp)
+    $evidenceDirectory = Join-Path $logDirectory ("evidence-{0}-{1}" -f $Target, $buildStamp)
+} else {
+    $evidenceDirectory = [IO.Path]::GetFullPath($EvidenceDirectory, $projectRoot)
+    $logsPrefix = [IO.Path]::GetFullPath($logDirectory) + [IO.Path]::DirectorySeparatorChar
+    if (-not $evidenceDirectory.StartsWith($logsPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw '本次构建证据目录必须位于项目 .tools/logs 内。'
+    }
+    $logPath = Join-Path $evidenceDirectory 'build.log'
+}
+if (Test-Path -LiteralPath $evidenceDirectory) { throw '构建证据目录已存在，拒绝覆盖历史记录。' }
 New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $evidenceDirectory 'source-manifest.json'), $sourceManifestText + "`n", [Text.UTF8Encoding]::new($false))
 $outputRelativePath = switch ($Target) {
@@ -141,6 +156,19 @@ $flutterArguments = switch ($Target) {
 if ($isWindowsHost -and $Target.StartsWith('Android')) {
     $flutterArguments += '--android-project-arg=kotlin.incremental=false'
 }
+$effectiveUpdateUrl = if (-not [string]::IsNullOrWhiteSpace($UpdateUrl)) {
+    $UpdateUrl.Trim()
+} elseif (-not [string]::IsNullOrWhiteSpace($env:KAZUMI_PLUS_UPDATE_URL)) {
+    $env:KAZUMI_PLUS_UPDATE_URL.Trim()
+} else {
+    ''
+}
+if (-not [string]::IsNullOrWhiteSpace($effectiveUpdateUrl)) {
+    if ($effectiveUpdateUrl -notmatch '^https?://') {
+        throw "KAZUMI_PLUS_UPDATE_URL 必须是有效的 http/https 地址：$effectiveUpdateUrl"
+    }
+    $flutterArguments += "--dart-define=KAZUMI_PLUS_UPDATE_URL=$effectiveUpdateUrl"
+}
 
 Push-Location $projectRoot
 try {
@@ -148,9 +176,19 @@ try {
         [Environment]::SetEnvironmentVariable($environmentName, $environmentUpdates[$environmentName], 'Process')
     }
     Write-Output "构建目标：$Target；日志：$logPath"
-    & $flutterCommand --version --machine 2>&1 | Out-File (Join-Path $evidenceDirectory 'flutter-version.json') -Encoding utf8
-    if ($LASTEXITCODE -ne 0) { throw '无法读取 Flutter 版本。' }
-    $flutterVersion = Get-Content (Join-Path $evidenceDirectory 'flutter-version.json') -Raw | ConvertFrom-Json
+    # 完整保存命令输出；首次遥测提示属于普通文本，不能直接作为 JSON 解析。
+    $flutterVersionOutputPath = Join-Path $evidenceDirectory 'flutter-version-output.log'
+    $flutterVersionJsonPath = Join-Path $evidenceDirectory 'flutter-version.json'
+    & $flutterCommand --version --machine 2>&1 | Out-File -LiteralPath $flutterVersionOutputPath -Encoding utf8
+    $flutterVersionExitCode = $LASTEXITCODE
+    if ($flutterVersionExitCode -ne 0) { throw "无法读取 Flutter 版本，退出码 $flutterVersionExitCode；原始输出：$flutterVersionOutputPath" }
+    try {
+        $flutterVersionJson = ConvertTo-FlutterVersionJson (Get-Content -LiteralPath $flutterVersionOutputPath -Raw -Encoding utf8)
+    } catch {
+        throw "无法解析 Flutter 版本；原始输出：$flutterVersionOutputPath；错误：$($_.Exception.Message)"
+    }
+    [IO.File]::WriteAllText($flutterVersionJsonPath, $flutterVersionJson + "`n", [Text.UTF8Encoding]::new($false))
+    $flutterVersion = Get-Content -LiteralPath $flutterVersionJsonPath -Raw -Encoding utf8 | ConvertFrom-Json
     if ($flutterVersion.frameworkVersion -ne '3.47.7') { throw '本项目冻结使用 Flutter 3.47.7，拒绝其他 SDK。' }
     & $flutterCommand @flutterArguments 2>&1 | Tee-Object -FilePath $logPath -Append
     if ($LASTEXITCODE -ne 0) {

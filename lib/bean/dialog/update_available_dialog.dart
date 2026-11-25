@@ -6,6 +6,7 @@ import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/bean/widget/tonal_card.dart';
 import 'package:kazumi/services/update/auto_updater.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
+import 'package:kazumi/services/update/update_downloader.dart';
 import 'package:kazumi/utils/date_time.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -33,9 +34,26 @@ class UpdateAvailableDialog extends StatefulWidget {
 
 class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
   final _notesController = ScrollController();
-  var _source = UpdateDownloadSource.mirror;
+  late UpdateDownloadSource _source;
   late var _type = widget.updateInfo.recommendedInstallationType;
   var _disableAutoUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _source = _availableSourcesFor(_type).first;
+  }
+
+  List<UpdateDownloadSource> _availableSourcesFor(InstallationType type) {
+    final asset = getUpdateAssetForType(widget.updateInfo.assets, type);
+    return getAvailableUpdateDownloadSources(asset);
+  }
+
+  bool _canDownloadInApp(InstallationType type) {
+    if (!type.downloadsInApp) return false;
+    final asset = getUpdateAssetForType(widget.updateInfo.assets, type);
+    return getUpdateDownloadUrlFromAsset(asset, _source).isNotEmpty;
+  }
 
   @override
   void dispose() {
@@ -47,7 +65,14 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final downloadInApp = _type.downloadsInApp;
+    final availableSources = _availableSourcesFor(_type);
+    if (!availableSources.contains(_source)) {
+      _source = availableSources.first;
+    }
+    final downloadInApp = _canDownloadInApp(_type);
+    final showDownloadOptions = downloadInApp &&
+        (availableSources.length > 1 ||
+            widget.updateInfo.availableInstallationTypes.length > 1);
 
     return AlertDialog(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 440),
@@ -67,9 +92,9 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildReleaseNotes(context),
-            if (downloadInApp) ...[
+            if (showDownloadOptions) ...[
               const SizedBox(height: 20),
-              _buildDownloadOptions(),
+              _buildDownloadOptions(availableSources),
             ],
             if (widget.onDisableAutoUpdateChanged != null) ...[
               const SizedBox(height: 8),
@@ -219,28 +244,34 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
     );
   }
 
-  Widget _buildDownloadOptions() {
+  Widget _buildDownloadOptions(List<UpdateDownloadSource> availableSources) {
     final types = widget.updateInfo.availableInstallationTypes;
     return SettingsSection(
       margin: EdgeInsets.zero,
       tiles: [
-        SettingsDropdownTile<UpdateDownloadSource>(
-          leading: Icons.cloud_download_rounded,
-          title: const Text('下载源'),
-          value: _source,
-          options: {
-            for (final source in UpdateDownloadSource.values)
-              source: source.label,
-          },
-          onChanged: (source) => setState(() => _source = source),
-        ),
+        if (availableSources.length > 1)
+          SettingsDropdownTile<UpdateDownloadSource>(
+            leading: Icons.cloud_download_rounded,
+            title: const Text('下载源'),
+            value: _source,
+            options: {
+              for (final source in availableSources) source: source.label,
+            },
+            onChanged: (source) => setState(() => _source = source),
+          ),
         if (types.length > 1)
           SettingsDropdownTile<InstallationType>(
             leading: Icons.inventory_2_rounded,
             title: const Text('安装类型'),
             value: _type,
             options: {for (final type in types) type: type.label},
-            onChanged: (type) => setState(() => _type = type),
+            onChanged: (type) => setState(() {
+              _type = type;
+              final nextSources = _availableSourcesFor(type);
+              if (!nextSources.contains(_source)) {
+                _source = nextSources.first;
+              }
+            }),
           ),
       ],
     );

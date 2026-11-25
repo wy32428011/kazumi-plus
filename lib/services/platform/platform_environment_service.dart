@@ -18,6 +18,7 @@ class PlatformEnvironmentService {
   static bool _androidWebViewAvailable = true;
 
   static AppDeviceFormFactor get formFactor => _formFactor;
+  static bool get isTelevisionBuild => _televisionBuild;
   static bool get isTelevision => _formFactor == AppDeviceFormFactor.television;
   static bool get androidWebViewAvailable => _androidWebViewAvailable;
 

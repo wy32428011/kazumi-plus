@@ -1,0 +1,408 @@
+name: Kazumi Plus release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的发布标签，例如 v0.2.0
+        type: string
+        required: true
+      draft:
+        description: 创建为草稿 Release（审核后再手动公开）
+        type: boolean
+        required: false
+        default: false
+      prerelease:
+        description: 标记为预发布版本（Prerelease）
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plus-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.47.7'
+  FLUTTER_FRAMEWORK_REVISION: abaf9c523780a608bd46686fd5e53740a07077f8
+  KAZUMI_PLUS_UPDATE_URL: https://api.github.com/repos/${{ github.repository }}/releases/latest
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      app_version: ${{ steps.check.outputs.app_version }}
+      numeric_version: ${{ steps.check.outputs.numeric_version }}
+      notes_path: ${{ steps.check.outputs.notes_path }}
+      is_draft: ${{ steps.check.outputs.is_draft }}
+      is_prerelease: ${{ steps.check.outputs.is_prerelease }}
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+      - name: Validate release metadata and release notes
+        id: check
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          INPUT_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || 'false' }}
+          INPUT_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || 'false' }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" == 'Predidit/Kazumi' ]]; then
+            echo 'Plus release workflow cannot run against the upstream repository.' >&2
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain=v1)" ]]; then
+            echo 'Checkout is dirty.' >&2
+            exit 1
+          fi
+          if [[ ! "$INPUT_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag '$INPUT_TAG'. Expected v<major>.<minor>.<patch> (optional -prerelease)." >&2
+            exit 1
+          fi
+          numeric_version="${BASH_REMATCH[1]}"
+          tag_version="${INPUT_TAG#v}"
+          pubspec_version="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path('pubspec.yaml').read_text(encoding='utf-8')
+          match = re.search(r'^version:\s*([^\s#]+)', text, re.MULTILINE)
+          if not match:
+              raise SystemExit('Unable to read version from pubspec.yaml')
+          print(match.group(1).split('+', 1)[0])
+          PY
+          )"
+          if [[ "$pubspec_version" != "$tag_version" ]]; then
+            echo "pubspec.yaml version ($pubspec_version) does not match tag ($INPUT_TAG)." >&2
+            exit 1
+          fi
+          notes_path="docs/releases/${INPUT_TAG}.md"
+          if [[ ! -f "$notes_path" ]]; then
+            echo "Missing release notes file: $notes_path. Run scripts/generate_release_notes.py $INPUT_TAG and commit it before releasing." >&2
+            exit 1
+          fi
+          if [[ -z "$(tr -d '[:space:]' < "$notes_path")" ]]; then
+            echo "Release notes file is empty: $notes_path." >&2
+            exit 1
+          fi
+          is_prerelease="$INPUT_PRERELEASE"
+          if [[ "$INPUT_TAG" == *-* ]]; then
+            is_prerelease='true'
+          fi
+          {
+            echo "tag=$INPUT_TAG"
+            echo "app_version=$tag_version"
+            echo "numeric_version=$numeric_version"
+            echo "notes_path=$notes_path"
+            echo "is_draft=$INPUT_DRAFT"
+            echo "is_prerelease=$is_prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: validate
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.validate.outputs.tag }}
+          persist-credentials: false
+      - name: Install frozen Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Build Windows portable ZIP and EXE installer
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          NUMERIC_VERSION: ${{ needs.validate.outputs.numeric_version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = flutter --version --machine | ConvertFrom-Json
+          if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
+          ./scripts/build_plus.ps1 -Target WindowsRelease -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
+
+          $outDir = 'dist/release/windows'
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          $bundle = (Resolve-Path 'build/windows/x64/runner/Release').Path
+          $staging = Join-Path $env:RUNNER_TEMP 'plus-windows-release'
+          if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          foreach ($file in Get-ChildItem $bundle -Recurse -File | Where-Object Extension -ne '.pdb') {
+            $destination = Join-Path $staging ([IO.Path]::GetRelativePath($bundle, $file.FullName))
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+          }
+          Copy-Item -LiteralPath LICENSE -Destination (Join-Path $staging 'LICENSE')
+
+          $zipName = "Kazumi-Plus-$($env:RELEASE_TAG)-windows-x64.zip"
+          $zipPath = Join-Path $outDir $zipName
+          Compress-Archive -Path "$staging/*" -DestinationPath $zipPath -Force
+          $zipSha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+          $toolchain = ./scripts/prepare_windows_installer.ps1 -LogDirectory ".tools/logs/inno-prepare-$stamp"
+          $installerStagingDir = 'dist/release/windows-installer-raw'
+          New-Item -ItemType Directory -Path $installerStagingDir -Force | Out-Null
+          ./scripts/build_windows_installer.ps1 `
+            -WindowsZipPath $zipPath `
+            -WindowsZipSha256 $zipSha256 `
+            -ApplicationVersion $env:NUMERIC_VERSION `
+            -OutputDirectory $installerStagingDir `
+            -LogDirectory ".tools/logs/inno-build-$stamp" `
+            -Toolchain $toolchain
+
+          $builtExe = Join-Path $installerStagingDir "Kazumi-Plus-$($env:NUMERIC_VERSION)-windows-x64-setup.exe"
+          $exeName = "Kazumi-Plus-$($env:RELEASE_TAG)-windows-x64-setup.exe"
+          Copy-Item -LiteralPath $builtExe -Destination (Join-Path $outDir $exeName) -Force
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-windows
+          path: |
+            dist/release/windows/Kazumi-Plus-*-windows-x64-setup.exe
+            dist/release/windows/Kazumi-Plus-*-windows-x64.zip
+          retention-days: 7
+
+  android:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [mobile, tv]
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.validate.outputs.tag }}
+          persist-credentials: false
+      - name: Install frozen JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17.0.18+8'
+      - name: Install frozen Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Restore existing mobile debug identity
+        if: matrix.flavor == 'mobile'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KAZUMI_MOBILE_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          : "${KEYSTORE_BASE64:?Configure KAZUMI_MOBILE_DEBUG_KEYSTORE_BASE64 to preserve the existing mobile identity.}"
+          umask 077
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+      - name: Restore dedicated TV release identity
+        if: matrix.flavor == 'tv'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KAZUMI_TV_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.KAZUMI_TV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KAZUMI_TV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KAZUMI_TV_KEY_PASSWORD }}
+        run: |
+          : "${KEYSTORE_BASE64:?Missing dedicated TV keystore.}"
+          : "${STORE_PASSWORD:?Missing TV store password.}"
+          : "${KEY_ALIAS:?Missing TV alias.}"
+          : "${KEY_PASSWORD:?Missing TV key password.}"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kazumi-plus-tv.p12"
+          echo "KAZUMI_TV_KEYSTORE_PATH=$RUNNER_TEMP/kazumi-plus-tv.p12" >> "$GITHUB_ENV"
+      - name: Build signed Android artifact
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          PLUS_FLAVOR: ${{ matrix.flavor }}
+          KAZUMI_TV_KEYSTORE_PASSWORD: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEYSTORE_PASSWORD || '' }}
+          KAZUMI_TV_KEY_ALIAS: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEY_ALIAS || '' }}
+          KAZUMI_TV_KEY_PASSWORD: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEY_PASSWORD || '' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = flutter --version --machine | ConvertFrom-Json
+          if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
+          $target = if ($env:PLUS_FLAVOR -eq 'tv') { 'AndroidTvRelease' } else { 'AndroidRelease' }
+          ./scripts/build_plus.ps1 -Target $target -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
+          $sourceApk = if ($env:PLUS_FLAVOR -eq 'tv') {
+            'build/app/outputs/flutter-apk/app-tv-release.apk'
+          } else {
+            'build/app/outputs/flutter-apk/app-arm64-v8a-mobile-release.apk'
+          }
+          $assetName = if ($env:PLUS_FLAVOR -eq 'tv') {
+            "Kazumi-Plus-$($env:RELEASE_TAG)-android-tv.apk"
+          } else {
+            "Kazumi-Plus-$($env:RELEASE_TAG)-android-mobile-arm64.apk"
+          }
+          $outDir = "dist/release/android-$($env:PLUS_FLAVOR)"
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          Copy-Item -LiteralPath $sourceApk -Destination (Join-Path $outDir $assetName) -Force
+      - name: Upload Android release artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android-${{ matrix.flavor }}
+          path: dist/release/android-${{ matrix.flavor }}/Kazumi-Plus-*.apk
+          retention-days: 7
+
+  apple:
+    needs: validate
+    runs-on: macos-15
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos, ios]
+    env:
+      XCODE_VERSION: '26.3'
+      PLUS_APPLE_PLATFORM: ${{ matrix.platform }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.validate.outputs.tag }}
+          persist-credentials: false
+      - name: Select fixed Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          echo "DEVELOPER_DIR=/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Install frozen Ruby
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
+        with:
+          ruby-version: '3.3.8'
+          bundler-cache: false
+      - name: Install frozen Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Install isolated native build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GEM_HOME="$RUNNER_TEMP/kazumi-apple-gems"
+          export GEM_PATH="$GEM_HOME"
+          mkdir -p "$GEM_HOME/bin"
+          gem install xcodeproj -v 1.27.0 --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin"
+          gem install cocoapods -v 1.16.2 --conservative --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin"
+          echo "GEM_HOME=$GEM_HOME" >> "$GITHUB_ENV"
+          echo "GEM_PATH=$GEM_PATH" >> "$GITHUB_ENV"
+          echo "$GEM_HOME/bin" >> "$GITHUB_PATH"
+          python3 -m venv "$RUNNER_TEMP/kazumi-apple-tools"
+          "$RUNNER_TEMP/kazumi-apple-tools/bin/python" -m pip install --only-binary=:all: 'cmake==3.31.6' 'ninja==1.11.1.4'
+          echo "$RUNNER_TEMP/kazumi-apple-tools/bin" >> "$GITHUB_PATH"
+      - name: Build and verify Apple artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/build_apple.sh "$PLUS_APPLE_PLATFORM" --update-url "$KAZUMI_PLUS_UPDATE_URL"
+          mkdir -p "dist/release/$PLUS_APPLE_PLATFORM"
+          python3 - "$PLUS_APPLE_PLATFORM" "$RELEASE_TAG" <<'PY'
+          import json
+          import shutil
+          import sys
+          from pathlib import Path
+
+          platform, tag = sys.argv[1], sys.argv[2]
+          apple_dir = Path("dist/apple") / platform
+          result = json.loads((apple_dir / "result.json").read_text(encoding="utf-8"))
+          assert result.get("status") == "artifact_verified", result.get("status")
+          artifacts = result.get("artifacts") or []
+          assert len(artifacts) == 1, f"Unexpected artifacts count: {len(artifacts)}"
+          source = apple_dir / artifacts[0]["path"]
+          ext = ".dmg" if platform == "macos" else ".ipa"
+          dest = Path("dist/release") / platform / f"Kazumi-Plus-{tag}-{platform}{ext}"
+          shutil.copy2(source, dest)
+          PY
+      - name: Upload Apple release artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/release/${{ matrix.platform }}/Kazumi-Plus-*
+          retention-days: 7
+
+  publish-release:
+    needs: [validate, windows, android, apple]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.validate.outputs.tag }}
+          persist-credentials: false
+      - name: Download all platform artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-raw release-assets
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --pattern 'release-*' --dir release-raw
+          find release-raw -type f -name 'Kazumi-Plus-*' -exec cp {} release-assets/ \;
+          (
+            cd release-assets
+            sha256sum Kazumi-Plus-* | sort -k2 > SHA256SUMS.txt
+          )
+          ls -lh release-assets
+          cat release-assets/SHA256SUMS.txt
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          NOTES_PATH: ${{ needs.validate.outputs.notes_path }}
+          IS_DRAFT: ${{ needs.validate.outputs.is_draft }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$RELEASE_TAG" \
+              --title "Kazumi Plus $RELEASE_TAG" \
+              --notes-file "$NOTES_PATH" \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            extra_flags=()
+            if [[ "$IS_DRAFT" == 'true' ]]; then
+              extra_flags+=(--draft)
+            fi
+            if [[ "$IS_PRERELEASE" == 'true' ]]; then
+              extra_flags+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --title "Kazumi Plus $RELEASE_TAG" \
+              --notes-file "$NOTES_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              "${extra_flags[@]}"
+          fi

@@ -16,6 +16,23 @@ String getUpdateDownloadUrlFromAsset(
   return url is String ? url.trim() : '';
 }
 
+List<UpdateDownloadSource> getAvailableUpdateDownloadSources(
+    Map<String, dynamic>? asset) {
+  final sources = <UpdateDownloadSource>[];
+  if (getUpdateDownloadUrlFromAsset(asset, UpdateDownloadSource.mirror)
+      .isNotEmpty) {
+    sources.add(UpdateDownloadSource.mirror);
+  }
+  if (getUpdateDownloadUrlFromAsset(asset, UpdateDownloadSource.github)
+      .isNotEmpty) {
+    sources.add(UpdateDownloadSource.github);
+  }
+  if (sources.isEmpty) {
+    return const [UpdateDownloadSource.github];
+  }
+  return sources;
+}
+
 class UpdateIntegrityException implements Exception {
   const UpdateIntegrityException(this.expected, this.actual);
 

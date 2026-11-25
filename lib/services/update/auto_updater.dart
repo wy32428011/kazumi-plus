@@ -7,6 +7,7 @@ import 'package:kazumi/bean/dialog/update_available_dialog.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/services/update/update_downloader.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -17,12 +18,14 @@ import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/version.dart';
 
 enum InstallationType {
+  windowsExe('EXE'),
   windowsMsix('MSIX'),
   windowsPortable('ZIP'),
   linuxDeb('DEB'),
   linuxTar('TAR'),
   macosDmg('DMG'),
-  androidApk('APK'),
+  androidMobileApk('APK'),
+  androidTvApk('TV APK'),
   ios('IPA'),
   unknown('未知类型');
 
@@ -64,17 +67,19 @@ class UpdateInfo {
 
 Map<String, dynamic>? getUpdateAssetForType(
     List<dynamic> assets, InstallationType type) {
-  final patterns = getUpdateFilePatterns(type).map((p) => p.toLowerCase());
+  final patterns =
+      getUpdateFilePatterns(type).map((p) => p.toLowerCase()).toList();
+  if (patterns.isEmpty) return null;
 
-  try {
-    final asset = assets.cast<Map<String, dynamic>>().firstWhere((asset) {
-      final name = (asset['name'] as String?)?.toLowerCase() ?? '';
-      return patterns.every((pattern) => name.contains(pattern));
-    });
-    return asset;
-  } catch (_) {
-    return null;
+  for (final item in assets) {
+    if (item is! Map) continue;
+    final asset = Map<String, dynamic>.from(item);
+    final name = (asset['name'] as String?)?.toLowerCase() ?? '';
+    if (patterns.every((pattern) => name.contains(pattern))) {
+      return asset;
+    }
   }
+  return null;
 }
 
 String getUpdateFileHashFromAsset(Map<String, dynamic> asset) {
@@ -87,20 +92,61 @@ String getUpdateFileHashFromAsset(Map<String, dynamic> asset) {
 
 List<String> getUpdateFilePatterns(InstallationType installationType) {
   switch (installationType) {
+    case InstallationType.windowsExe:
+      return ['windows', '.exe'];
     case InstallationType.windowsMsix:
       return ['windows', '.msix'];
     case InstallationType.windowsPortable:
       return ['windows', '.zip'];
     case InstallationType.macosDmg:
       return ['macos', '.dmg'];
-    case InstallationType.androidApk:
-      return ['android', '.apk'];
+    case InstallationType.androidMobileApk:
+      return ['android-mobile', '.apk'];
+    case InstallationType.androidTvApk:
+      return ['android-tv', '.apk'];
     case InstallationType.linuxDeb:
     case InstallationType.linuxTar:
     case InstallationType.ios:
     case InstallationType.unknown:
       return [];
   }
+}
+
+List<InstallationType> detectAvailableInstallationTypes({
+  required bool isWindows,
+  required bool isLinux,
+  required bool isMacOS,
+  required bool isIOS,
+  required bool isAndroid,
+  required bool isTelevisionBuild,
+}) {
+  if (isWindows) {
+    return const [
+      InstallationType.windowsExe,
+      InstallationType.windowsPortable,
+    ];
+  }
+  if (isLinux) {
+    return const [InstallationType.linuxDeb, InstallationType.linuxTar];
+  }
+  if (isMacOS) return const [InstallationType.macosDmg];
+  if (isIOS) return const [InstallationType.ios];
+  if (isAndroid) {
+    return isTelevisionBuild
+        ? const [InstallationType.androidTvApk]
+        : const [InstallationType.androidMobileApk];
+  }
+  return const [InstallationType.unknown];
+}
+
+List<InstallationType> resolveAvailableInstallationTypes(
+  List<InstallationType> detectedTypes,
+  List<dynamic> assets,
+) {
+  final matched = detectedTypes
+      .where((type) => getUpdateAssetForType(assets, type) != null)
+      .toList();
+  return matched.isNotEmpty ? matched : detectedTypes;
 }
 
 class AutoUpdater {
@@ -113,16 +159,14 @@ class AutoUpdater {
   final DownloadHttpClient _downloadClient = DownloadHttpClient.instance;
 
   List<InstallationType> _detectAvailableInstallationTypes() {
-    if (Platform.isWindows) {
-      return [InstallationType.windowsMsix, InstallationType.windowsPortable];
-    }
-    if (Platform.isLinux) {
-      return [InstallationType.linuxDeb, InstallationType.linuxTar];
-    }
-    if (Platform.isMacOS) return [InstallationType.macosDmg];
-    if (Platform.isIOS) return [InstallationType.ios];
-    if (Platform.isAndroid) return [InstallationType.androidApk];
-    return [InstallationType.unknown];
+    return detectAvailableInstallationTypes(
+      isWindows: Platform.isWindows,
+      isLinux: Platform.isLinux,
+      isMacOS: Platform.isMacOS,
+      isIOS: Platform.isIOS,
+      isAndroid: Platform.isAndroid,
+      isTelevisionBuild: PlatformEnvironmentService.isTelevisionBuild,
+    );
   }
 
   Future<UpdateInfo?> checkForUpdates() async {
@@ -138,7 +182,11 @@ class AutoUpdater {
       final currentVersion = ApiEndpoints.version;
 
       if (needUpdate(currentVersion, remoteVersion)) {
-        final availableTypes = _detectAvailableInstallationTypes();
+        final assets = data['assets'] is List ? data['assets'] as List : const [];
+        final availableTypes = resolveAvailableInstallationTypes(
+          _detectAvailableInstallationTypes(),
+          assets,
+        );
 
         return UpdateInfo(
           version: remoteVersion,
@@ -148,7 +196,7 @@ class AutoUpdater {
           publishedAt: data['published_at'] ?? '',
           installationType: availableTypes.first,
           availableInstallationTypes: availableTypes,
-          assets: data['assets'] ?? [],
+          assets: assets,
         );
       }
 
@@ -435,7 +483,13 @@ class AutoUpdater {
       await Future.delayed(const Duration(seconds: 2));
 
       if (Platform.isWindows) {
-        if (installationType == InstallationType.windowsMsix) {
+        if (installationType == InstallationType.windowsExe) {
+          await Process.start(
+            filePath,
+            const [],
+            mode: ProcessStartMode.detached,
+          );
+        } else if (installationType == InstallationType.windowsMsix) {
           final Uri fileUri = Uri.file(filePath);
           if (await canLaunchUrl(fileUri)) {
             await launchUrl(fileUri);
@@ -513,7 +567,7 @@ class AutoUpdater {
     }
     String extension = '';
     if (Platform.isWindows) {
-      extension = '.msix';
+      extension = '.exe';
     } else if (Platform.isMacOS) {
       extension = '.dmg';
     } else if (Platform.isLinux) {
@@ -521,6 +575,6 @@ class AutoUpdater {
     } else if (Platform.isAndroid) {
       extension = '.apk';
     }
-    return 'Kazumi-$version$extension';
+    return 'Kazumi-Plus-$version$extension';
   }
 }
