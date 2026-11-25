@@ -132,6 +132,9 @@ jobs:
           NUMERIC_VERSION: ${{ needs.validate.outputs.numeric_version }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # Ensure Windows bsdtar (supports .7z for media_kit) precedes Git GNU tar on PATH.
+          $env:PATH = "$env:SystemRoot\System32;$env:PATH"
+          Write-Host "tar: $((Get-Command tar -ErrorAction SilentlyContinue).Source)"
           . ./scripts/flutter_version_json.ps1
           $versionOutput = (flutter --version --machine 2>&1 | Out-String)
           $version = ConvertTo-FlutterVersionJson $versionOutput | ConvertFrom-Json
@@ -172,6 +175,18 @@ jobs:
           $builtExe = Join-Path $installerStagingDir "Kazumi-Plus-$($env:NUMERIC_VERSION)-windows-x64-setup.exe"
           $exeName = "Kazumi-Plus-$($env:RELEASE_TAG)-windows-x64-setup.exe"
           Copy-Item -LiteralPath $builtExe -Destination (Join-Path $outDir $exeName) -Force
+      - name: Dump native hook logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path '.dart_tool/hooks_runner') {
+            Get-ChildItem '.dart_tool/hooks_runner' -Recurse -Include 'stderr.txt','stdout.txt','native-build.log' -ErrorAction SilentlyContinue | ForEach-Object {
+              if ($_.Length -gt 0) {
+                Write-Host "=== $($_.FullName) ==="
+                Get-Content -LiteralPath $_.FullName -Tail 80
+              }
+            }
+          }
       - name: Upload Windows release artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
