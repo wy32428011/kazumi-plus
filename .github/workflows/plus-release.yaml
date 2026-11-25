@@ -111,7 +111,7 @@ jobs:
 
   windows:
     needs: validate
-    runs-on: windows-2022
+    runs-on: windows-2025
     timeout-minutes: 60
     steps:
       - name: Checkout exact release tag
@@ -132,9 +132,10 @@ jobs:
           NUMERIC_VERSION: ${{ needs.validate.outputs.numeric_version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          # Ensure Windows bsdtar (supports .7z for media_kit) precedes Git GNU tar on PATH.
+          # Ensure Windows bsdtar (supports .7z/LZMA on Windows Server 2025) precedes Git GNU tar on PATH.
           $env:PATH = "$env:SystemRoot\System32;$env:PATH"
           Write-Host "tar: $((Get-Command tar -ErrorAction SilentlyContinue).Source)"
+          tar --version
           . ./scripts/flutter_version_json.ps1
           $versionOutput = (flutter --version --machine 2>&1 | Out-String)
           $version = ConvertTo-FlutterVersionJson $versionOutput | ConvertFrom-Json
