@@ -132,11 +132,14 @@ jobs:
           NUMERIC_VERSION: ${{ needs.validate.outputs.numeric_version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = flutter --version --machine | ConvertFrom-Json
+          . ./scripts/flutter_version_json.ps1
+          $versionOutput = (flutter --version --machine 2>&1 | Out-String)
+          $version = ConvertTo-FlutterVersionJson $versionOutput | ConvertFrom-Json
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
           ./scripts/build_plus.ps1 -Target WindowsRelease -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
 
-          $outDir = 'dist/release/windows'
+          $repoRoot = (Get-Location).Path
+          $outDir = Join-Path $repoRoot 'dist/release/windows'
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           $bundle = (Resolve-Path 'build/windows/x64/runner/Release').Path
           $staging = Join-Path $env:RUNNER_TEMP 'plus-windows-release'
@@ -155,15 +158,15 @@ jobs:
           $zipSha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
           $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-          $toolchain = ./scripts/prepare_windows_installer.ps1 -LogDirectory ".tools/logs/inno-prepare-$stamp"
-          $installerStagingDir = 'dist/release/windows-installer-raw'
+          $toolchain = ./scripts/prepare_windows_installer.ps1 -LogDirectory (Join-Path $repoRoot ".tools/logs/inno-prepare-$stamp")
+          $installerStagingDir = Join-Path $repoRoot 'dist/release/windows-installer-raw'
           New-Item -ItemType Directory -Path $installerStagingDir -Force | Out-Null
           ./scripts/build_windows_installer.ps1 `
             -WindowsZipPath $zipPath `
             -WindowsZipSha256 $zipSha256 `
             -ApplicationVersion $env:NUMERIC_VERSION `
             -OutputDirectory $installerStagingDir `
-            -LogDirectory ".tools/logs/inno-build-$stamp" `
+            -LogDirectory (Join-Path $repoRoot ".tools/logs/inno-build-$stamp") `
             -Toolchain $toolchain
 
           $builtExe = Join-Path $installerStagingDir "Kazumi-Plus-$($env:NUMERIC_VERSION)-windows-x64-setup.exe"
@@ -244,7 +247,9 @@ jobs:
           KAZUMI_TV_KEY_PASSWORD: ${{ matrix.flavor == 'tv' && secrets.KAZUMI_TV_KEY_PASSWORD || '' }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = flutter --version --machine | ConvertFrom-Json
+          . ./scripts/flutter_version_json.ps1
+          $versionOutput = (flutter --version --machine 2>&1 | Out-String)
+          $version = ConvertTo-FlutterVersionJson $versionOutput | ConvertFrom-Json
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
           $target = if ($env:PLUS_FLAVOR -eq 'tv') { 'AndroidTvRelease' } else { 'AndroidRelease' }
           ./scripts/build_plus.ps1 -Target $target -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"

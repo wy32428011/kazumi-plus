@@ -1,6 +1,10 @@
-# 版本机读输出后可能附带 Flutter 首次运行提示，只解析首个完整的 JSON 对象。
+# 版本机读输出前后可能附带 Flutter 首次运行提示，只解析首个完整的 JSON 对象。
 function ConvertTo-FlutterVersionJson([string]$OutputText) {
-    $stringReader = [IO.StringReader]::new($OutputText)
+    $jsonStart = $OutputText.IndexOf('{')
+    if ($jsonStart -lt 0) {
+        throw 'Flutter 版本输出中未找到 JSON 对象。'
+    }
+    $stringReader = [IO.StringReader]::new($OutputText.Substring($jsonStart))
     $jsonReader = [Newtonsoft.Json.JsonTextReader]::new($stringReader)
     try {
         # 保留 SDK 返回的日期字符串，避免 JSON 读取器自动转换日期格式。
