@@ -222,7 +222,9 @@ try {
         $pinName = if ($Target -eq 'AndroidTvRelease') { 'tv-release-certificate.json' } elseif ($Target -in @('AndroidDebug', 'AndroidRelease')) { 'mobile-debug-certificate.json' } else { $null }
         if ($pinName) {
             $pin = Get-Content (Join-Path $projectRoot ('scripts/signing/' + $pinName)) -Raw | ConvertFrom-Json
-            if ($certificateFingerprint -ne $pin.certificateSha256) { throw 'APK 实际签名与固定应用身份不一致。' }
+            if ($certificateFingerprint -ne $pin.certificateSha256) {
+                throw "APK 实际签名与固定应用身份不一致（实际：$certificateFingerprint，期望：$($pin.certificateSha256)）。"
+            }
         }
         & (Join-Path $toolsDirectory $aaptName) dump badging $outputPath 2>&1 | Out-File (Join-Path $evidenceDirectory 'apk-badging.txt') -Encoding utf8
         if ($LASTEXITCODE -ne 0) { throw 'APK 清单读取失败。' }

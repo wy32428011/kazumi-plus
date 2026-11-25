@@ -126,7 +126,10 @@ jobs:
           : "${KEYSTORE_BASE64:?Configure KAZUMI_MOBILE_DEBUG_KEYSTORE_BASE64 to preserve the existing mobile identity.}"
           umask 077
           mkdir -p "$HOME/.android"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mobile-debug.keystore"
+          cp "$RUNNER_TEMP/mobile-debug.keystore" "$HOME/.android/debug.keystore"
+          echo "KAZUMI_MOBILE_DEBUG_KEYSTORE_PATH=$RUNNER_TEMP/mobile-debug.keystore" >> "$GITHUB_ENV"
+          echo "ANDROID_USER_HOME=$HOME/.android" >> "$GITHUB_ENV"
       - name: Restore dedicated TV release identity
         if: matrix.flavor == 'tv'
         shell: bash
