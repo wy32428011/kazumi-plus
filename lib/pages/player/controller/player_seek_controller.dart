@@ -1,4 +1,3 @@
-import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/pages/player/controller/player_playback_controller.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -21,18 +20,21 @@ class _InteractiveSeekSession {
 class PlayerSeekController {
   PlayerSeekController({
     required PlayerPlaybackController playback,
-    required PlayerDanmakuController danmaku,
+    required void Function() onBeforeSeek,
+    required bool Function() canInteract,
     required Future<void> Function({bool enableSync}) pause,
     required Future<void> Function({bool enableSync}) play,
     required Future<void> Function(bool enableSync) onSeekCompleted,
-  })  : _playback = playback,
-        _danmaku = danmaku,
-        _pause = pause,
-        _play = play,
-        _onSeekCompleted = onSeekCompleted;
+  }) : _playback = playback,
+       _onBeforeSeek = onBeforeSeek,
+       _canInteract = canInteract,
+       _pause = pause,
+       _play = play,
+       _onSeekCompleted = onSeekCompleted;
 
   final PlayerPlaybackController _playback;
-  final PlayerDanmakuController _danmaku;
+  final void Function() _onBeforeSeek;
+  final bool Function() _canInteract;
   final Future<void> Function({bool enableSync}) _pause;
   final Future<void> Function({bool enableSync}) _play;
   final Future<void> Function(bool enableSync) _onSeekCompleted;
@@ -42,21 +44,19 @@ class PlayerSeekController {
 
   bool get hasActiveInteractiveSeek => _interactiveSession != null;
 
-  Future<void> seekTo(
-    Duration target, {
-    bool enableSync = true,
-  }) {
+  Future<void> seekTo(Duration target, {bool enableSync = true}) {
     final player = _playback.mediaPlayer;
-    if (player == null) {
+    if (player == null || !_canInteract()) {
       return Future<void>.value();
     }
 
     final normalizedTarget = _normalize(target);
     _playback.currentPosition = normalizedTarget;
-    _danmaku.clearAndInvalidateScheduledDanmakus();
+    _onBeforeSeek();
 
     final operation = _seekTail.then((_) async {
-      if (!_playback.isCurrentPlayer(player)) {
+      // 排队期间若会话切换或正在恢复进度，旧操作不得定位新会话。
+      if (!_canInteract() || !_playback.isCurrentPlayer(player)) {
         return;
       }
       try {
@@ -64,7 +64,7 @@ class PlayerSeekController {
       } catch (_) {
         return;
       }
-      if (_playback.isCurrentPlayer(player)) {
+      if (_canInteract() && _playback.isCurrentPlayer(player)) {
         await _onSeekCompleted(enableSync);
       }
     });
@@ -72,16 +72,14 @@ class PlayerSeekController {
     return operation;
   }
 
-  Future<void> seekBy(
-    Duration offset, {
-    bool enableSync = true,
-  }) =>
-      seekTo(
-        _playback.currentPosition + offset,
-        enableSync: enableSync,
-      );
+  Future<void> seekBy(Duration offset, {bool enableSync = true}) =>
+      seekTo(_playback.currentPosition + offset, enableSync: enableSync);
 
   void beginInteractiveSeek() {
+    if (!_canInteract()) {
+      _interactiveSession = null;
+      return;
+    }
     final initialPosition = _playback.currentPosition;
     final previousSession = _interactiveSession;
     // Keep the original playing state across overlapping gestures.
@@ -112,8 +110,10 @@ class PlayerSeekController {
     if (session == null) {
       return Future<bool>.value(false);
     }
-    return session.completion ??=
-        _finishInteractiveSeek(session, cancelled: cancelled);
+    return session.completion ??= _finishInteractiveSeek(
+      session,
+      cancelled: cancelled,
+    );
   }
 
   void invalidateInteractiveSeek() {
@@ -166,6 +166,7 @@ class PlayerSeekController {
   }
 
   bool _isCurrent(_InteractiveSeekSession session) =>
+      _canInteract() &&
       identical(_interactiveSession, session) &&
       identical(_playback.mediaPlayer, session.player);
 

@@ -178,7 +178,9 @@ class XPathRuleStrategy {
             episodeIndex++) {
           try {
             final episode = episodeNodes[episodeIndex].node;
-            final source = episode.attributes['href']?.trim() ?? '';
+            final source =
+                (episode.attributes['href'] ?? episode.attributes['src'] ?? '')
+                    .trim();
             if (source.isEmpty) {
               diagnostics.add(
                 '线路 $roadIndex 的剧集节点 $episodeIndex 缺少 URL，已跳过',

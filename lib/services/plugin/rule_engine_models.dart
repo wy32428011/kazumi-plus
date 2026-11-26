@@ -62,12 +62,14 @@ class ChapterErrorException implements Exception {
 
 /// Immutable runtime snapshot built from a plugin rule.
 ///
-/// Playback-only headers such as the rule's User-Agent and Referer are
-/// deliberately excluded. API requests can provide their own static headers.
+/// Rule-level `userAgent` is forwarded when explicitly configured so XPath
+/// chapter/catalog requests match playback UA requirements; API/catalog
+/// requests can still override headers per operation.
 class RuleExecutionConfig {
   const RuleExecutionConfig({
     required this.pluginName,
     required this.baseUrl,
+    this.userAgent = '',
     required this.usePost,
     required this.searchMode,
     required this.chapterMode,
@@ -85,6 +87,7 @@ class RuleExecutionConfig {
 
   final String pluginName;
   final String baseUrl;
+  final String userAgent;
   final bool usePost;
   final String searchMode;
   final String chapterMode;

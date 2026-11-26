@@ -104,6 +104,9 @@ class BangumiClient {
   }
 
   bool _shouldSignProtectedMirrorRequest(String url, String method) {
+    if (!hasBangumiMirrorCredentials) {
+      return false;
+    }
     final uri = Uri.parse(url);
     if (BangumiAcceleration.current != BangumiAcceleration.mirror ||
         !ApiEndpoints.bangumiPublicApiHosts.contains(uri.host)) {

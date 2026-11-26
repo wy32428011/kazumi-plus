@@ -1,0 +1,137 @@
+{
+  "api": "8",
+  "type": "movie",
+  "name": "4K-AV",
+  "version": "1.0.0",
+  "ruleId": "kazumi-plus.4kav",
+  "plusSchemaVersion": 1,
+  "supportedMediaTypes": [
+    "movie"
+  ],
+  "enabled": true,
+  "muliSources": false,
+  "useWebview": false,
+  "useNativePlayer": true,
+  "usePost": false,
+  "useLegacyParser": false,
+  "adBlocker": false,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+  "baseURL": "https://www.4k-av.com",
+  "searchURL": "https://www.4k-av.com/s?u=@keyword",
+  "searchList": "//div[@id='MainContent_newestlist']//div[@class='title']/a[starts-with(@href,'/movie/')]/parent::div/parent::div",
+  "searchName": ".//div[@class='title']//h2",
+  "searchResult": ".//div[@class='title']/a",
+  "chapterRoads": "//video[@id='video1']",
+  "chapterRoadName": "",
+  "chapterResult": ".//source",
+  "referer": "https://www.4k-av.com/",
+  "searchMode": "xpath",
+  "chapterMode": "xpath",
+  "catalog": {
+    "channels": {
+      "movie": {
+        "categoryIds": [
+          "/movie/"
+        ],
+        "defaultCategoryId": "/movie/",
+        "categories": {
+          "mode": "xpath",
+          "request": {
+            "method": "GET",
+            "url": "https://www.4k-av.com/movie/"
+          },
+          "listPath": "//ul[@id='cate_list']/li/a",
+          "fields": {
+            "id": {
+              "path": ".",
+              "attribute": "href"
+            },
+            "name": "."
+          }
+        },
+        "discover": {
+          "mode": "xpath",
+          "request": {
+            "method": "GET",
+            "url": "https://www.4k-av.com/movie/"
+          },
+          "listPath": "//div[@id='MainContent_newestlist']//div[@class='title']/a[starts-with(@href,'/movie/')]/parent::div/parent::div",
+          "fields": {
+            "title": ".//div[@class='title']//h2",
+            "source": {
+              "path": ".//div[@class='title']/a",
+              "attribute": "href"
+            },
+            "categoryId": {
+              "path": "./ancestor::body//ul[@id='cate_list']//a[@href='/movie/']",
+              "attribute": "href"
+            },
+            "poster": {
+              "path": ".//div[@class='poster']//img",
+              "attribute": "src"
+            },
+            "year": ".//div[@class='resyear']/label[@title='年份']",
+            "status": ".//div[@class='resyear']/label[@title='分辨率']",
+            "description": ".//div[@class='videodesc']"
+          }
+        },
+        "search": {
+          "mode": "xpath",
+          "request": {
+            "method": "GET",
+            "url": "https://www.4k-av.com/s",
+            "query": {
+              "u": "@keyword"
+            }
+          },
+          "listPath": "//div[@id='MainContent_newestlist']//div[@class='title']/a[starts-with(@href,'/movie/')]/parent::div/parent::div",
+          "fields": {
+            "title": ".//div[@class='title']//h2",
+            "source": {
+              "path": ".//div[@class='title']/a",
+              "attribute": "href"
+            },
+            "categoryId": {
+              "path": "./ancestor::body//ul[@id='cate_list']//a[@href='/movie/']",
+              "attribute": "href"
+            },
+            "poster": {
+              "path": ".//div[@class='poster']//img",
+              "attribute": "src"
+            },
+            "year": ".//div[@class='resyear']/label[@title='年份']",
+            "status": ".//div[@class='resyear']/label[@title='分辨率']"
+          }
+        },
+        "detail": {
+          "mode": "xpath",
+          "request": {
+            "method": "GET",
+            "url": "@source"
+          },
+          "listPath": "",
+          "fields": {
+            "title": "//div[@id='MainContent_titleh12']//div[@class='MainTitle']",
+            "source": {
+              "path": "//link[@rel='alternate'][@hreflang='zh-Hans'][contains(@href,'/movie/')]",
+              "attribute": "href"
+            },
+            "categoryId": {
+              "path": "//ul[@id='cate_list']//a[@href='/movie/']",
+              "attribute": "href"
+            },
+            "poster": {
+              "path": "//div[@id='MainContent_poster']//img",
+              "attribute": "src"
+            },
+            "year": "//div[@id='MainContent_videodetail']//a",
+            "status": "//div[@id='MainContent_videodetail']/span[1]",
+            "description": "//div[@id='MainContent_videodesc']",
+            "aliases": "//div[@id='MainContent_titleh12']/h2",
+            "genres": "//div[@id='MainContent_tags']"
+          }
+        }
+      }
+    }
+  }
+}

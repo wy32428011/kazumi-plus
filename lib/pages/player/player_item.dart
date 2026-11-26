@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:kazumi/pages/player/player_item_panel.dart';
+import 'package:kazumi/pages/player/player_failover_banner.dart';
+import 'package:kazumi/pages/player/player_quality_sheet.dart';
 import 'package:kazumi/pages/player/player_keyboard_shortcuts.dart';
 import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
 import 'package:kazumi/pages/player/player_panel_hold.dart';
@@ -13,19 +15,17 @@ import 'package:kazumi/pages/player/syncplay_sheet.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/player/pip_utils.dart';
-import 'package:kazumi/services/sync/webdav.dart';
 import 'package:flutter/gestures.dart';
-import 'package:kazumi/pages/player/player_controller.dart';
+import 'package:kazumi/pages/player/player_controls_controller.dart';
+import 'package:kazumi/pages/player/player_presentation_context.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/player/video_details_sheet.dart';
 import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
-import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
@@ -56,8 +56,8 @@ class PlayerItem extends StatefulWidget {
     this.tvOverlay,
   });
 
-  final PlayerController playerController;
-  final VideoPageController videoPageController;
+  final PlayerControlsController playerController;
+  final PlayerPresentationContext videoPageController;
   final bool fillsWindow;
   final VoidCallback? onToggleSidePanel;
   final Future<void> Function(int episode, {int currentRoad, int offset})
@@ -78,18 +78,16 @@ class _PlayerItemState extends State<PlayerItem>
         WidgetsBindingObserver,
         TickerProviderStateMixin,
         KazumiDialogOwner {
-  late final PlayerController playerController;
-  late final VideoPageController videoPageController =
+  late final PlayerControlsController playerController;
+  late final PlayerPresentationContext videoPageController =
       widget.videoPageController;
-  final HistoryController historyController = inject<HistoryController>();
   final MyController myController = inject<MyController>();
   AudioController get _audioController => playerController.audioController;
   late final Map<String, PlayerShortcutAction> keyboardActions;
   late final Map<String, PlayerLongPressShortcutActions>
   keyboardLongPressActions;
 
-  late bool webDavEnable;
-  late bool webDavEnableHistory;
+  AnimePlayerFeatures? get _anime => videoPageController.animeFeatures;
 
   final _danmuKey = GlobalKey();
   final _videoSurfaceKey = GlobalKey();
@@ -117,7 +115,6 @@ class _PlayerItemState extends State<PlayerItem>
   late bool _danmakuUseSystemFont;
   late double _danmakuBorderSize;
 
-  late bool autoPlayNext;
   late bool backgroundPlayback;
   late bool brightnessVolumeGesture;
 
@@ -161,6 +158,9 @@ class _PlayerItemState extends State<PlayerItem>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     super.didChangeAppLifecycleState(state);
+    final backgroundSave = state == AppLifecycleState.paused
+        ? videoPageController.onBackground()
+        : Future<void>.value();
     if (state == AppLifecycleState.paused && !backgroundPlayback) {
       // Suspend before awaiting pause so a later resume wins; pause alone keeps prefetching.
       final suspend = playerController.playback.setPrefetchSuspended(true);
@@ -171,14 +171,17 @@ class _PlayerItemState extends State<PlayerItem>
         } catch (_) {}
       }
       await suspend;
+      await backgroundSave;
       return;
     }
+    await backgroundSave;
     if (state == AppLifecycleState.resumed) {
       await playerController.playback.setPrefetchSuspended(false);
+      await videoPageController.onForeground();
     }
     try {
-      if (playerController.playback.playerPlaying) {
-        playerController.danmaku.canvasController.resume();
+      if (_anime != null && playerController.playback.playerPlaying) {
+        _anime!.controller.danmaku.canvasController.resume();
       }
     } catch (_) {}
   }
@@ -219,7 +222,7 @@ class _PlayerItemState extends State<PlayerItem>
       return;
     }
     final bool playing = playerController.playback.playing;
-    final bool danmakuEnabled = playerController.danmaku.danmakuOn;
+    final bool danmakuEnabled = _anime?.controller.danmaku.danmakuOn ?? false;
     // In picture in picture the measured rect is the small window itself.
     final Rect? sourceRect = videoPageController.isPip
         ? _lastPipSourceRect
@@ -237,6 +240,7 @@ class _PlayerItemState extends State<PlayerItem>
     await PipUtils.updateAndroidPIPActions(
       playing: playing,
       danmakuEnabled: danmakuEnabled,
+      danmakuAvailable: _anime != null,
       width: playerController.debug.playerWidth,
       height: playerController.debug.playerHeight,
       sourceRect: sourceRect,
@@ -373,7 +377,7 @@ class _PlayerItemState extends State<PlayerItem>
       'screenshot': handleScreenshot,
       'skip': skipOP,
       'exitfullscreen': () => handleShortcutExitFullscreen(),
-      'toggledanmaku': () => handleDanmaku(),
+      if (_anime != null) 'toggledanmaku': () => handleDanmaku(),
       'speed1': () => setPlaybackSpeed(1.0),
       'speed2': () => setPlaybackSpeed(2.0),
       'speed3': () => setPlaybackSpeed(3.0),
@@ -397,9 +401,12 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   Future<void> handlePreNextEpisode(String direction) async {
-    if (videoPageController.loading) return;
+    if (!videoPageController.canInteract) return;
     final selection = videoPageController.selectedEpisode;
     final currentRoad = selection.road;
+    if (currentRoad < 0 || currentRoad >= videoPageController.roadList.length) {
+      return;
+    }
     final episodes = videoPageController.roadList[currentRoad].data;
     int targetEpisode;
     if (direction == 'next') {
@@ -423,10 +430,9 @@ class _PlayerItemState extends State<PlayerItem>
       episode: targetEpisode,
       road: currentRoad,
     );
-    final targetRef = videoPageController.resolveEpisode(targetSelection);
-    if (targetRef != null) {
-      KazumiDialog.showToast(message: '正在加载${targetRef.displayTitle}');
-    }
+    KazumiDialog.showToast(
+      message: '正在加载${videoPageController.episodeTitle(targetSelection)}',
+    );
     widget.changeEpisode(targetEpisode, currentRoad: currentRoad);
   }
 
@@ -580,44 +586,39 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void handleDanmaku() {
-    playerController.danmaku.canvasController.clear();
-    if (playerController.danmaku.danmakuOn) {
-      playerController.danmaku.setDanmakuEnabled(false);
+    if (_anime == null) return;
+    _anime!.controller.danmaku.canvasController.clear();
+    if (_anime!.controller.danmaku.danmakuOn) {
+      _anime!.controller.danmaku.setDanmakuEnabled(false);
       GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, false);
       unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
-    if (playerController.danmaku.danDanmakus.isEmpty) {
+    if (_anime!.controller.danmaku.danDanmakus.isEmpty) {
       showDanmakuSwitch();
       unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
-    playerController.danmaku.setDanmakuEnabled(true);
+    _anime!.controller.danmaku.setDanmakuEnabled(true);
     GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, true);
     unawaited(_updateAndroidPIPActions(force: true));
-  }
-
-  Future<void> _syncHistoryWithWebDav() async {
-    if (webDavEnable && webDavEnableHistory) {
-      try {
-        var webDav = WebDav();
-        await webDav.syncHistory();
-      } catch (e) {
-        KazumiLogger().w('WebDav: auto history sync failed', error: e);
-      }
-    }
   }
 
   Future<void> _bindAudioService() async {
     try {
       await _audioController.bindCallbacks(
+        owner: playerController.audioOwner,
         onPlay: () => playerController.play(),
         onPause: () => playerController.pause(),
         onSkipToNext: () => handlePreNextEpisode('next'),
         onSkipToPrevious: () => handlePreNextEpisode('prev'),
         onSeek: (position) => playerController.seek(position),
-        artworkUrl: videoPageController.bangumiItem.images['large'],
+        artworkUrl: videoPageController.artworkUrl,
       );
+      if (!mounted) {
+        await _audioController.deactivate(owner: playerController.audioOwner);
+        return;
+      }
       _syncAudioServiceState();
     } catch (e) {
       KazumiLogger().w('AudioController: failed to bind callbacks', error: e);
@@ -629,37 +630,28 @@ class _PlayerItemState extends State<PlayerItem>
       final selection = videoPageController.playbackEpisode;
       final currentRoad = selection.road;
       final currentEpisode = selection.episode;
-      if (videoPageController.roadList.isEmpty ||
-          currentRoad < 0 ||
-          currentRoad >= videoPageController.roadList.length) {
-        return;
-      }
-      final currentRoadData = videoPageController.roadList[currentRoad];
-      if (currentEpisode <= 0 || currentRoadData.data.isEmpty) return;
-      final episodeRef = videoPageController.resolveEpisode(selection);
-      if (episodeRef == null) return;
-      final queueIndex = episodeRef.listIndex - 1;
-
-      if (playerController.playback.duration <= Duration.zero) return;
-
-      final canSkipToPrevious = currentEpisode > 1;
-      final canSkipToNext = currentEpisode < currentRoadData.data.length;
-      final bangumiTitle = videoPageController.bangumiItem.nameCn.isNotEmpty
-          ? videoPageController.bangumiItem.nameCn
-          : videoPageController.bangumiItem.name;
+      final episodeCount = currentRoad >= 0 &&
+              currentRoad < videoPageController.roadList.length
+          ? videoPageController.roadList[currentRoad].data.length : 0;
+      final validSelection = currentEpisode > 0 && currentEpisode <= episodeCount;
+      final queueIndex = validSelection ? currentEpisode - 1 : null;
+      final canSkipToPrevious = videoPageController.canInteract &&
+          validSelection && currentEpisode > 1;
+      final canSkipToNext = videoPageController.canInteract &&
+          validSelection && currentEpisode < episodeCount;
 
       unawaited(
         _audioController.updateSession(
-          mediaId:
-              '${videoPageController.bangumiItem.id}_${currentRoad}_$currentEpisode',
-          title: bangumiTitle,
-          album: videoPageController.isOfflineMode
-              ? videoPageController.offlinePluginName
-              : videoPageController.currentPlugin.name,
-          artist: episodeRef.displayTitle,
-          duration: playerController.playback.duration,
+          owner: playerController.audioOwner,
+          mediaId: videoPageController.mediaId,
+          title: videoPageController.title,
+          album: videoPageController.sourceName,
+          artist: videoPageController.episodeTitle(selection),
+          duration: playerController.playback.duration > Duration.zero
+              ? playerController.playback.duration : null,
           playing: playerController.playback.playing,
-          loading: playerController.playback.loading,
+          loading: playerController.playback.loading || videoPageController.loading ||
+              videoPageController.resumePending || videoPageController.errorMessage != null,
           buffering: playerController.playback.isBuffering,
           completed: playerController.playback.completed,
           updatePosition: playerController.playback.currentPosition,
@@ -681,31 +673,41 @@ class _PlayerItemState extends State<PlayerItem>
   void _handleFullscreenChange() async {
     playerController.panel.lockPanel = false;
     _releasePlayerPanelHolds();
-    playerController.danmaku.canvasController.clear();
+    _anime?.controller.danmaku.canvasController.clear();
     _scheduleAndroidPIPSourceRectSync();
 
-    await _syncHistoryWithWebDav();
+    await videoPageController.onFullscreenChanged();
   }
 
   void handleProgressBarDragStart() {
-    _beginInteractiveSeek();
+    if (!_beginInteractiveSeek()) return;
     _syncAudioServiceState();
     _progressBarDragHold = acquirePlayerPanelHold();
   }
 
   Future<void> handleProgressBarSeek(Duration duration) async {
     if (!playerController.seeking.updateInteractiveSeek(duration)) {
-      await playerController.seek(duration);
+      try {
+        await playerController.seek(duration);
+      } finally {
+        _progressBarDragHold?.release();
+        _progressBarDragHold = null;
+        if (mounted) _restartPlayerTimer();
+      }
       return;
     }
     await _finishInteractiveSeek();
   }
 
-  void _beginInteractiveSeek() {
+  bool _beginInteractiveSeek() {
     _progressBarDragHold?.release();
     _progressBarDragHold = null;
-    playerTimer?.cancel();
+    // 拒绝恢复期间的拖动时保留状态时钟，防止恢复确认和历史保存永久停止。
+    if (!playerController.interactionsEnabled) return false;
     playerController.seeking.beginInteractiveSeek();
+    if (!playerController.seeking.hasActiveInteractiveSeek) return false;
+    playerTimer?.cancel();
+    return true;
   }
 
   Future<void> _finishInteractiveSeek({bool cancelled = false}) async {
@@ -762,9 +764,7 @@ class _PlayerItemState extends State<PlayerItem>
     final added = await _screenshots.capture(
       capturePng: playerController.screenshotPng,
       title: videoPageController.title,
-      episode:
-          videoPageController.resolveEpisode(episode)?.displayTitle ??
-          '第 ${episode.episode} 集',
+      episode: videoPageController.episodeTitle(episode),
       position: player.state.position,
       isCurrent: () =>
           mounted &&
@@ -824,7 +824,7 @@ class _PlayerItemState extends State<PlayerItem>
     final source = videoPageController.src;
     final resume =
         playerController.playback.playing &&
-        !playerController.syncplay.hasSession;
+        !(_anime?.controller.syncplay.hasSession ?? false);
     final sleepRemaining =
         TimedShutdownService().remainingSecondsNotifier.value;
     final sleepDeadline = sleepRemaining > 0
@@ -845,7 +845,7 @@ class _PlayerItemState extends State<PlayerItem>
             videoPageController.playbackEpisode == episode &&
             videoPageController.src == source &&
             !videoPageController.loading &&
-            !playerController.syncplay.hasSession &&
+            !(_anime?.controller.syncplay.hasSession ?? false) &&
             (sleepDeadline == null || DateTime.now().isBefore(sleepDeadline)) &&
             WidgetsBinding.instance.lifecycleState ==
                 AppLifecycleState.resumed &&
@@ -1154,15 +1154,24 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void _emitDanmakusForCurrentPosition() {
+    if (_anime == null || !videoPageController.canInteract) return;
     if (playerController.playback.currentPosition.inMicroseconds == 0 ||
         playerController.playback.playerPlaying != true ||
-        playerController.danmaku.danmakuOn != true) {
+        _anime!.controller.danmaku.danmakuOn != true) {
       return;
     }
+    // 暂停后切集或自动开播不会经过 controls.play()，需同步恢复弹幕画布避免有数据但不渲染。
+    if (!playerController.playback.playerBuffering &&
+        !_anime!.controller.danmaku.canvasController.running) {
+      _anime!.controller.danmaku.canvasController.resume();
+    }
 
-    final danmakus = playerController.danmaku.danmakusForPlaybackPosition(
+    final danmakus = _anime!.controller.danmaku.danmakusForPlaybackPosition(
       playerController.playback.currentPosition,
     );
+    final sessionPlayer = playerController.playback.mediaPlayer;
+    final sessionEpisode = videoPageController.playbackEpisode;
+    final sessionSource = videoPageController.src;
     final danmakuCount = danmakus.length;
     for (final entry in danmakus.asMap().entries) {
       final idx = entry.key;
@@ -1177,18 +1186,22 @@ class _PlayerItemState extends State<PlayerItem>
         total: danmakuCount,
       );
       final scheduledDanmakuGeneration =
-          playerController.danmaku.scheduledDanmakuGeneration;
+          _anime!.controller.danmaku.scheduledDanmakuGeneration;
       Future.delayed(Duration(milliseconds: delay), () {
         if (!mounted ||
+            !videoPageController.canInteract ||
+            !identical(playerController.playback.mediaPlayer, sessionPlayer) ||
+            videoPageController.playbackEpisode != sessionEpisode ||
+            videoPageController.src != sessionSource ||
             !playerController.playback.playerPlaying ||
             playerController.playback.playerBuffering ||
-            !playerController.danmaku.danmakuOn ||
-            playerController.danmaku.scheduledDanmakuGeneration !=
+            !_anime!.controller.danmaku.danmakuOn ||
+            _anime!.controller.danmaku.scheduledDanmakuGeneration !=
                 scheduledDanmakuGeneration ||
             myController.isDanmakuBlocked(danmaku.message)) {
           return;
         }
-        playerController.danmaku.canvasController.addDanmaku(
+        _anime!.controller.danmaku.canvasController.addDanmaku(
           DanmakuContentItem(
             danmaku.message,
             color: color,
@@ -1221,58 +1234,31 @@ class _PlayerItemState extends State<PlayerItem>
           playerController.panel.brightness = value;
         });
       }
-      final historyIdentity = videoPageController.currentHistoryIdentity;
-      if (playerController.playback.playerPlaying &&
-          !videoPageController.loading &&
-          historyIdentity != null &&
-          historyIdentity.canRecord) {
-        historyController.updateHistory(
-          historyIdentity,
-          playerController.playback.playerPosition,
-          duration: playerController.playback.playerDuration,
-        );
-      }
-      final playingSelection = videoPageController.playbackEpisode;
-      final playingRoadData =
-          videoPageController.roadList[playingSelection.road];
-      if (playerController.playback.completed && !videoPageController.loading) {
-        if (playerController.playback.resumedNearEnd) {
-          // Replay stale near-end resumes instead of advancing to the next episode.
-          unawaited(playerController.playback.restartFromBeginning());
-        } else if (playingSelection.episode < playingRoadData.data.length &&
-            autoPlayNext) {
-          final nextSelection = VideoEpisodeSelection(
-            episode: playingSelection.episode + 1,
-            road: playingSelection.road,
-          );
-          // Let the controller report resolution failures without retrying every tick.
-          final nextRef = videoPageController.resolveEpisode(nextSelection);
-          if (nextRef != null) {
-            KazumiDialog.showToast(message: '正在加载${nextRef.displayTitle}');
-          }
-          try {
-            playerTimer!.cancel();
-          } catch (_) {}
-          widget.changeEpisode(
-            playingSelection.episode + 1,
-            currentRoad: playingSelection.road,
-          );
-        }
-      }
-      playerController.setSyncPlayCurrentPosition();
+      videoPageController.onPlaybackTick();
     });
   }
 
   void showDanmakuSwitch() {
+    if (_anime == null) return;
     unawaited(
       showDanmakuSourceSheet(
         context,
-        bangumiId: videoPageController.bangumiItem.id,
-        initialKeyword: videoPageController.title,
-        danmakuController: playerController.danmaku,
-        onBeforeApply: videoPageController.cancelAutomaticDanmakuLoad,
+        bangumiId: _anime!.video.bangumiItem.id,
+        initialKeyword: _danmakuSearchKeyword(),
+        danmakuController: _anime!.controller.danmaku,
+        onBeforeApply: _anime!.video.cancelAutomaticDanmakuLoad,
       ),
     );
+  }
+
+  /// 作品名比来源页标题更接近弹幕库里的条目。
+  String _danmakuSearchKeyword() {
+    final item = _anime?.video.bangumiItem;
+    final nameCn = item?.nameCn.trim() ?? '';
+    if (nameCn.isNotEmpty) return nameCn;
+    final name = item?.name.trim() ?? '';
+    if (name.isNotEmpty) return name;
+    return videoPageController.title.trim();
   }
 
   void showVideoInfo() {
@@ -1280,16 +1266,17 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void showSyncPlayPanel() {
+    if (_anime == null) return;
     showSyncPlaySheet(
       context,
-      playerController: playerController,
+      playerController: _anime!.controller,
       changeEpisode: widget.changeEpisode,
     );
   }
 
   @override
   void onWindowRestore() {
-    playerController.danmaku.canvasController.clear();
+    _anime?.controller.danmaku.canvasController.clear();
   }
 
   @override
@@ -1352,9 +1339,7 @@ class _PlayerItemState extends State<PlayerItem>
       parent: _screenshotFeedbackController,
       curve: Curves.linear,
     );
-    webDavEnable = GStorage.getSetting(SettingsKeys.webDavEnable);
-    webDavEnableHistory = GStorage.getSetting(SettingsKeys.webDavEnableHistory);
-    playerController.danmaku.setDanmakuEnabled(
+    _anime?.controller.danmaku.setDanmakuEnabled(
       GStorage.getSetting(SettingsKeys.danmakuEnabledByDefault),
     );
     _border = GStorage.getSetting(SettingsKeys.danmakuBorder);
@@ -1377,7 +1362,6 @@ class _PlayerItemState extends State<PlayerItem>
     _danmakuFontWeight = GStorage.getSetting(SettingsKeys.danmakuFontWeight);
     _danmakuUseSystemFont = GStorage.getSetting(SettingsKeys.useSystemFont);
     _danmakuBorderSize = GStorage.getSetting(SettingsKeys.danmakuBorderSize);
-    autoPlayNext = GStorage.getSetting(SettingsKeys.autoPlayNext);
     backgroundPlayback = GStorage.getSetting(SettingsKeys.backgroundPlayback);
     brightnessVolumeGesture = GStorage.getSetting(
       SettingsKeys.brightnessVolumeGesture,
@@ -1531,34 +1515,35 @@ class _PlayerItemState extends State<PlayerItem>
                           height: double.infinity,
                         ),
                       ),
-                      Positioned.fill(
-                        child: DanmakuScreen(
-                          key: _danmuKey,
-                          createdController: (DanmakuController e) {
-                            playerController.danmaku.canvasController = e;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              playerController.updateDanmakuSpeed();
-                            });
-                          },
-                          option: DanmakuOption(
-                            hideTop: _hideTop,
-                            hideScroll: _hideScroll,
-                            hideBottom: _hideBottom,
-                            area: _danmakuArea,
-                            opacity: _opacity,
-                            fontSize: _fontSize,
-                            // Speed scaling is applied after canvas creation.
-                            duration: _danmakuDuration,
-                            lineHeight: _danmakuLineHeight,
-                            strokeWidth: _border ? _danmakuBorderSize : 0.0,
-                            fontWeight: _danmakuFontWeight,
-                            massiveMode: _massiveMode,
-                            fontFamily: _danmakuUseSystemFont
-                                ? null
-                                : customAppFontFamily,
+                      if (_anime != null)
+                        Positioned.fill(
+                          child: DanmakuScreen(
+                            key: _danmuKey,
+                            createdController: (DanmakuController e) {
+                              _anime!.controller.danmaku.canvasController = e;
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _anime!.controller.updateDanmakuSpeed();
+                              });
+                            },
+                            option: DanmakuOption(
+                              hideTop: _hideTop,
+                              hideScroll: _hideScroll,
+                              hideBottom: _hideBottom,
+                              area: _danmakuArea,
+                              opacity: _opacity,
+                              fontSize: _fontSize,
+                              // Speed scaling is applied after canvas creation.
+                              duration: _danmakuDuration,
+                              lineHeight: _danmakuLineHeight,
+                              strokeWidth: _border ? _danmakuBorderSize : 0.0,
+                              fontWeight: _danmakuFontWeight,
+                              massiveMode: _massiveMode,
+                              fontFamily: _danmakuUseSystemFont
+                                  ? null
+                                  : customAppFontFamily,
+                            ),
                           ),
                         ),
-                      ),
                       Positioned.fill(
                         child: PlayerScreenshotFeedbackOverlay(
                           animation: _screenshotFeedbackAnimation,
@@ -1616,6 +1601,7 @@ class _PlayerItemState extends State<PlayerItem>
                                   _beginInteractiveSeek();
                                 },
                                 onSeekUpdate: (delta, cancelPending) {
+                                  if (!playerController.seeking.hasActiveInteractiveSeek) return;
                                   playerController.panel.showSeekTime = true;
                                   playerController.panel.seekCancelPending =
                                       cancelPending;
@@ -1714,6 +1700,14 @@ class _PlayerItemState extends State<PlayerItem>
                                 },
                               ),
                       ),
+                      if (videoPageController.sourceSwitchingFeatures
+                          case final sourceFeatures?)
+                        Positioned.fill(
+                          child: PlayerFailoverBanner(
+                            features: sourceFeatures,
+                            disableAnimations: widget.disableAnimations,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1749,7 +1743,8 @@ class _PlayerItemState extends State<PlayerItem>
         duration: playerController.playback.duration,
         playing: playerController.playback.playing,
         loading:
-            videoPageController.loading || playerController.playback.loading,
+            videoPageController.loading || playerController.playback.loading ||
+            videoPageController.resumePending || videoPageController.errorMessage != null,
         rate: playerController.playback.playerSpeed,
         onToggle: playerController.playOrPause,
         onPlay: () => playerController.play(),
@@ -1784,11 +1779,41 @@ class _PlayerItemState extends State<PlayerItem>
         episodeIndex: episodeIndex,
         onEpisodeSelected: (road, episode) =>
             widget.changeEpisode(episode + 1, currentRoad: road, offset: 0),
+        onQuickOpenDrawer: () async {
+          await showPlayerQualitySheet(
+            context,
+            playerController.quality,
+            sourceFeatures: videoPageController.sourceSwitchingFeatures,
+          );
+          if (mounted) {
+            (widget.tvOverlay ?? _localTvOverlay).requestFocus();
+          }
+        },
         extraActions: [
           OutlinedButton(
-            onPressed: handleDanmaku,
-            child: Text(playerController.danmaku.danmakuOn ? '关闭弹幕' : '开启弹幕'),
+            onPressed: () async {
+              await showPlayerQualitySheet(
+                context,
+                playerController.quality,
+                sourceFeatures: videoPageController.sourceSwitchingFeatures,
+              );
+              if (mounted) {
+                (widget.tvOverlay ?? _localTvOverlay).requestFocus();
+              }
+            },
+            child: Text(
+              videoPageController.sourceSwitchingFeatures != null
+                  ? '片源与清晰度'
+                  : '清晰度',
+            ),
           ),
+          if (_anime != null)
+            OutlinedButton(
+              onPressed: handleDanmaku,
+              child: Text(
+                _anime!.controller.danmaku.danmakuOn ? '关闭弹幕' : '开启弹幕',
+              ),
+            ),
         ],
         child: Stack(
           fit: StackFit.expand,
@@ -1797,39 +1822,50 @@ class _PlayerItemState extends State<PlayerItem>
               key: _videoSurfaceKey,
               child: PlayerItemSurface(playerController: playerController),
             ),
-            IgnorePointer(
-              child: Opacity(
-                opacity: playerController.danmaku.danmakuOn ? 1 : 0,
-                child: DanmakuScreen(
-                  key: _danmuKey,
-                  createdController: (controller) {
-                    playerController.danmaku.canvasController = controller;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) playerController.updateDanmakuSpeed();
-                    });
-                  },
-                  option: DanmakuOption(
-                    hideTop: _hideTop,
-                    hideScroll: _hideScroll,
-                    hideBottom: _hideBottom,
-                    area: _danmakuArea,
-                    opacity: _opacity,
-                    fontSize: _fontSize,
-                    duration: _danmakuDuration,
-                    lineHeight: _danmakuLineHeight,
-                    strokeWidth: _border ? _danmakuBorderSize : 0.0,
-                    fontWeight: _danmakuFontWeight,
-                    massiveMode: _massiveMode,
-                    fontFamily: _danmakuUseSystemFont
-                        ? null
-                        : customAppFontFamily,
+            if (_anime != null)
+              IgnorePointer(
+                child: Opacity(
+                  opacity: _anime!.controller.danmaku.danmakuOn ? 1 : 0,
+                  child: DanmakuScreen(
+                    key: _danmuKey,
+                    createdController: (controller) {
+                      _anime!.controller.danmaku.canvasController = controller;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && _anime != null) {
+                          _anime!.controller.updateDanmakuSpeed();
+                        }
+                      });
+                    },
+                    option: DanmakuOption(
+                      hideTop: _hideTop,
+                      hideScroll: _hideScroll,
+                      hideBottom: _hideBottom,
+                      area: _danmakuArea,
+                      opacity: _opacity,
+                      fontSize: _fontSize,
+                      duration: _danmakuDuration,
+                      lineHeight: _danmakuLineHeight,
+                      strokeWidth: _border ? _danmakuBorderSize : 0.0,
+                      fontWeight: _danmakuFontWeight,
+                      massiveMode: _massiveMode,
+                      fontFamily: _danmakuUseSystemFont
+                          ? null
+                          : customAppFontFamily,
+                    ),
                   ),
                 ),
               ),
-            ),
             if (playerController.playback.isBuffering ||
                 videoPageController.loading)
               const Center(child: CircularProgressIndicator()),
+            if (videoPageController.sourceSwitchingFeatures
+                case final sourceFeatures?)
+              Positioned.fill(
+                child: PlayerFailoverBanner(
+                  features: sourceFeatures,
+                  disableAnimations: widget.disableAnimations,
+                ),
+              ),
           ],
         ),
       ),

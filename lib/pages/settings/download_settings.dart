@@ -22,6 +22,7 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
   late int parallelEpisodes;
   late int parallelSegments;
   late bool downloadDanmaku;
+  late String downloadQuality;
   String downloadDirectory = '';
   String defaultDownloadDirectory = '';
   bool isSelectingDirectory = false;
@@ -34,6 +35,7 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
     parallelSegments =
         GStorage.getSetting(SettingsKeys.downloadParallelSegments);
     downloadDanmaku = GStorage.getSetting(SettingsKeys.downloadDanmaku);
+    downloadQuality = GStorage.getSetting(SettingsKeys.downloadQuality);
     downloadDirectory = _directoryService.customDirectory;
     _loadDefaultDownloadDirectory();
   }
@@ -127,6 +129,27 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
                 },
               ),
             ],
+          ),
+          SettingsRadioSection<String>(
+            title: Text('画质设置（仅对新下载生效）'),
+            groupValue: downloadQuality,
+            onChanged: (String? value) {
+              if (value == null) return;
+              GStorage.putSetting<String>(SettingsKeys.downloadQuality, value);
+              setState(() => downloadQuality = value);
+            },
+            tiles: const [
+              ('auto', '最高画质'),
+              ('1080', '最高 1080P'),
+              ('720', '最高 720P'),
+              ('480', '最高 480P'),
+              ('lowest', '最低画质'),
+            ]
+                .map((e) => SettingsTile<String>.radioTile(
+                      title: Text(e.$2),
+                      radioValue: e.$1,
+                    ))
+                .toList(),
           ),
           SettingsSection(
             title: Text('缓存设置'),

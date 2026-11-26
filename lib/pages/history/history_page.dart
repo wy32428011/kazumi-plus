@@ -190,12 +190,12 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Future<void> _deleteSourceHistory(SourceHistory history) async {
-    final key = history.media.ref.key;
+  Future<void> _deleteSourceHistory(FoldedSourceHistory folded) async {
+    final key = folded.primary.media.ref.key;
     if (_clearing || _deleting.contains(key)) return;
     setState(() => _deleting.add(key));
     try {
-      await _sourceLibrary.removeHistory(history.media.ref);
+      await _sourceLibrary.removeHistoryCluster(folded.linkedRefs);
       if (mounted &&
           widget.controller.histories.isEmpty &&
           _sourceLibrary.histories.isEmpty) {
@@ -210,6 +210,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Widget _mixedHistory(List<History> animeEntries) {
     final query = _query.trim().toLowerCase();
+    final foldedSources = _sourceLibrary.foldedHistories(kind: _kind);
     final entries = <(DateTime, Object)>[
       if (_kind == null)
         for (final entry in animeEntries)
@@ -217,12 +218,11 @@ class _HistoryPageState extends State<HistoryPage> {
               .toLowerCase()
               .contains(query))
             (entry.lastWatchTime, entry),
-      for (final entry in _sourceLibrary.histories)
-        if ((_kind == null || entry.media.ref.kind == _kind) &&
-            '${entry.media.title} ${entry.media.sourceName}'
-                .toLowerCase()
-                .contains(query))
-          (entry.updatedAt, entry),
+      for (final folded in foldedSources)
+        if ('${folded.primary.media.title} ${folded.primary.media.sourceName}'
+            .toLowerCase()
+            .contains(query))
+          (folded.primary.updatedAt, folded),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
     return Column(
       children: [
@@ -262,7 +262,8 @@ class _HistoryPageState extends State<HistoryPage> {
                         ),
                       );
                     }
-                    final source = entry as SourceHistory;
+                    final folded = entry as FoldedSourceHistory;
+                    final source = folded.primary;
                     final position = Duration(milliseconds: source.positionMs);
                     final date = MaterialLocalizations.of(
                       context,
@@ -270,6 +271,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     return SourceMediaTile(
                       key: ValueKey(source.media.ref.key),
                       media: source.media,
+                      foldedSourceCount: folded.sourceCount,
                       subtitle:
                           '${source.seasonName == null ? '' : '${source.seasonName} · '}${source.episodeTitle}'
                           '\n看到 ${position.inMinutes}:${(position.inSeconds % 60).toString().padLeft(2, '0')} · $date',
@@ -287,13 +289,13 @@ class _HistoryPageState extends State<HistoryPage> {
                                   _clearing ||
                                       _deleting.contains(source.media.ref.key)
                                   ? null
-                                  : () => _deleteSourceHistory(source),
+                                  : () => _deleteSourceHistory(folded),
                             )
                           : PopupMenuButton<String>(
                               tooltip: '记录操作',
                               onSelected: (value) {
                                 if (value == 'delete') {
-                                  _deleteSourceHistory(source);
+                                  _deleteSourceHistory(folded);
                                 } else {
                                   context.pushNamed(
                                     '/media/detail',

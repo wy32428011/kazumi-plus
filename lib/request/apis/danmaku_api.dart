@@ -2,10 +2,12 @@ import 'package:kazumi/modules/danmaku/danmaku_ch_convert.dart';
 import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
+import 'package:kazumi/request/apis/bilibili_danmaku_api.dart';
 import 'package:kazumi/request/clients/danmaku_client.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/dandan_credentials.dart';
 
 class DanmakuApi {
   static final DanmakuClient _client = DanmakuClient.instance;
@@ -32,13 +34,41 @@ class DanmakuApi {
   // v2 episode search avoids the anime search's 25-result cap.
   // Fetch full episode lists separately; search results can truncate them.
   static Future<DanmakuSearchResponse> searchAnimes(String title) async {
-    final endPoint =
-        ApiEndpoints.dandanAPIDomain + ApiEndpoints.dandanAPISearchEpisodes;
-    final jsonData = await _client.get(
-      endPoint,
-      queryParameters: {'anime': title, 'v2': 'true'},
-    );
-    return DanmakuSearchResponse.fromJson(jsonData);
+    final keyword = normalizeSearchKeyword(title);
+    if (dandanCredentialsConfigured) {
+      try {
+        final endPoint =
+            ApiEndpoints.dandanAPIDomain + ApiEndpoints.dandanAPISearchEpisodes;
+        final jsonData = await _client.get(
+          endPoint,
+          queryParameters: {'anime': keyword, 'v2': 'true'},
+        );
+        final response = DanmakuSearchResponse.fromJson(
+          Map<String, dynamic>.from(jsonData as Map),
+        );
+        if (response.animes.isNotEmpty) return response;
+      } catch (error) {
+        KazumiLogger().w(
+          'Danmaku: dandan search failed, falling back',
+          error: error,
+        );
+      }
+    } else {
+      KazumiLogger().w(
+        'Danmaku: dandan credentials are missing, searching bilibili',
+      );
+    }
+    return BilibiliDanmakuApi.search(keyword);
+  }
+
+  /// 去掉来源标题末尾的集数，避免把「第01集」送进作品检索。
+  static String normalizeSearchKeyword(String title) {
+    final trimmed = title.trim();
+    final normalized = trimmed
+        .replaceAll(RegExp(r'\s*第\s*\d+\s*[集话話期]\s*$'), '')
+        .replaceAll(RegExp(r'\s*(?:EP|E)\s*\d+\s*$', caseSensitive: false), '')
+        .trim();
+    return normalized.isEmpty ? trimmed : normalized;
   }
 
   static Future<List<DanmakuEntry>> getDanDanmaku(
@@ -69,7 +99,17 @@ class DanmakuApi {
         'chConvert': conversion.value.toString(),
       },
     );
-    final List<dynamic> comments = jsonData['comments'];
-    return [for (final comment in comments) DanmakuEntry.fromJson(comment)];
+    final rawComments = jsonData['comments'];
+    if (rawComments is! List) return const [];
+    final entries = <DanmakuEntry>[];
+    for (final comment in rawComments) {
+      if (comment is! Map) continue;
+      try {
+        entries.add(DanmakuEntry.fromJson(Map<String, dynamic>.from(comment)));
+      } catch (_) {
+        // 单条弹幕字段不完整时保留其余结果。
+      }
+    }
+    return entries;
   }
 }

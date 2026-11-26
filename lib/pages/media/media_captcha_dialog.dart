@@ -48,15 +48,67 @@ Future<bool> verifyMediaCaptcha(
   return await KazumiDialog.show<bool>(
         context: context,
         clickMaskDismiss: false,
-        builder: (_) => _MediaCaptchaDialog(request: request, url: url),
+        builder: (_) => _MediaCaptchaDialog(
+          plugin: request.plugin,
+          label: request.label,
+          url: url,
+        ),
+      ) ??
+      false;
+}
+
+/// 面向任意插件（含传统 XPath 动漫插件与目录 API 插件）的可见人工图片验证入口。
+/// 绝不静默绕过验证码；验证通过仅刷新该站点的持久化 Cookie。
+Future<bool> verifyPluginSearchCaptcha(
+  BuildContext context, {
+  required Plugin plugin,
+  required String keyword,
+}) async {
+  final animeChannel = plugin.catalog?.channels['anime'];
+  final catalogOp = animeChannel?.search ?? animeChannel?.discover;
+  if (catalogOp != null) {
+    return verifyMediaCaptcha(
+      context,
+      MediaCaptchaRequest(
+        plugin: plugin,
+        operation: catalogOp,
+        variables: {'keyword': keyword, 'page': 1},
+        label: '${plugin.name} 人工验证',
+      ),
+    );
+  }
+  final config = plugin.antiCrawlerConfig;
+  if (config.captchaType != CaptchaType.imageCaptcha ||
+      config.captchaImage.isEmpty ||
+      config.captchaInput.isEmpty ||
+      config.captchaButton.isEmpty) {
+    KazumiDialog.showToast(message: '此规则没有可用的人工图片验证配置；请返回来源页完成验证。');
+    return false;
+  }
+  final targetUrl = plugin.searchURL.isNotEmpty
+      ? plugin.searchURL.replaceAll('@keyword', Uri.encodeQueryComponent(keyword))
+      : plugin.baseUrl;
+  return await KazumiDialog.show<bool>(
+        context: context,
+        clickMaskDismiss: false,
+        builder: (_) => _MediaCaptchaDialog(
+          plugin: plugin,
+          label: '${plugin.name} 人工验证',
+          url: targetUrl,
+        ),
       ) ??
       false;
 }
 
 /// 复用原验证服务的 WebView、Cookie 持久化与提交过程，由用户识别图片。
 class _MediaCaptchaDialog extends StatefulWidget {
-  const _MediaCaptchaDialog({required this.request, required this.url});
-  final MediaCaptchaRequest request;
+  const _MediaCaptchaDialog({
+    required this.plugin,
+    required this.label,
+    required this.url,
+  });
+  final Plugin plugin;
+  final String label;
   final String url;
 
   @override
@@ -101,7 +153,7 @@ class _MediaCaptchaDialogState extends State<_MediaCaptchaDialog> {
     _timeout = Timer(const Duration(seconds: 15), () {
       if (mounted) setState(() => _error = '验证码加载超时，请重试。');
     });
-    final config = widget.request.plugin.antiCrawlerConfig;
+    final config = widget.plugin.antiCrawlerConfig;
     try {
       await _service.loadForCaptcha(
         widget.url,
@@ -120,7 +172,7 @@ class _MediaCaptchaDialogState extends State<_MediaCaptchaDialog> {
       _busy = true;
       _error = null;
     });
-    final plugin = widget.request.plugin;
+    final plugin = widget.plugin;
     _timeout?.cancel();
     _timeout = Timer(const Duration(seconds: 15), () {
       if (mounted) {
@@ -161,7 +213,7 @@ class _MediaCaptchaDialogState extends State<_MediaCaptchaDialog> {
     if (_closing) return;
     setState(() => _closing = true);
     _timeout?.cancel();
-    await _service.cancelAndSave(widget.request.plugin.name);
+    await _service.cancelAndSave(widget.plugin.name);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) Navigator.of(context).pop(false);
     });
@@ -184,13 +236,13 @@ class _MediaCaptchaDialogState extends State<_MediaCaptchaDialog> {
     },
     child: AlertDialog(
       scrollable: true,
-      title: Text('${widget.request.plugin.name} · 人工验证'),
+      title: Text('${widget.plugin.name}  人工验证'),
       content: SizedBox(
         width: 360,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('请输入图片中的字符。验证成功后只重试“${widget.request.label}”。'),
+            Text('请输入图片中的字符。验证成功后只重试“${widget.label}”。'),
             const SizedBox(height: 16),
             if (_image != null)
               Image.memory(

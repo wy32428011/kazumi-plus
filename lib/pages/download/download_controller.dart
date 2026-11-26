@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
+import 'package:kazumi/pages/download/download_target.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/repositories/download_repository.dart';
@@ -16,6 +17,34 @@ import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:mobx/mobx.dart';
 
 part 'download_controller.g.dart';
+
+class EpisodeDownloadRequest {
+  const EpisodeDownloadRequest({
+    required this.episodeNumber,
+    required this.episodeName,
+    required this.road,
+    required this.episodePageUrl,
+  });
+
+  final int episodeNumber;
+  final String episodeName;
+  final int road;
+  final String episodePageUrl;
+}
+
+class EpisodeDownloadEnqueueSummary {
+  const EpisodeDownloadEnqueueSummary({
+    required this.queued,
+    required this.restarted,
+    required this.skipped,
+  });
+
+  final int queued;
+  final int restarted;
+  final int skipped;
+
+  int get accepted => queued + restarted;
+}
 
 class DownloadController = _DownloadController with _$DownloadController;
 
@@ -41,6 +70,21 @@ abstract class _DownloadController with Store {
   final List<_ResolveRequest> _resolveQueue = [];
   final Map<String, VideoSourceResolverLease> _activeResolveLeases = {};
   bool _isBackgroundServiceInitialized = false;
+
+  /// 同一作品的下载记录必须串行写入。批量选集若并发 put，后写的新记录会盖掉先写入的集。
+  Future<void> _recordWrite = Future<void>.value();
+
+  Future<T> _withRecordWrite<T>(Future<T> Function() action) {
+    final done = Completer<T>();
+    _recordWrite = _recordWrite.then((_) async {
+      try {
+        done.complete(await action());
+      } catch (error, stackTrace) {
+        done.completeError(error, stackTrace);
+      }
+    });
+    return done.future;
+  }
 
   Future<void> init() async {
     _replaceRecords(_repository.getAllRecords());
@@ -467,57 +511,178 @@ abstract class _DownloadController with Store {
     required int road,
     required String episodePageUrl,
   }) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    await enqueueEpisodeDownloads(
+      bangumiId: bangumiId,
+      bangumiName: bangumiName,
+      bangumiCover: bangumiCover,
+      pluginName: pluginName,
+      episodes: [
+        EpisodeDownloadRequest(
+          episodeNumber: episodeNumber,
+          episodeName: episodeName,
+          road: road,
+          episodePageUrl: episodePageUrl,
+        ),
+      ],
+    );
+  }
 
-    final record = _repository.getRecord(recordKey) ??
-        DownloadRecord(
-          bangumiId,
-          bangumiName,
-          bangumiCover,
-          pluginName,
-          {},
-          DateTime.now(),
+  /// 把同一作品的多集一次性写入下载记录。已完成或进行中的地址会跳过，失败和暂停会重新开始。
+  Future<EpisodeDownloadEnqueueSummary> enqueueEpisodeDownloads({
+    required int bangumiId,
+    required String bangumiName,
+    required String bangumiCover,
+    required String pluginName,
+    required List<EpisodeDownloadRequest> episodes,
+  }) {
+    return _withRecordWrite(() async {
+      if (episodes.isEmpty) {
+        return const EpisodeDownloadEnqueueSummary(
+          queued: 0,
+          restarted: 0,
+          skipped: 0,
         );
+      }
 
-    if (episodePageUrl.isNotEmpty) {
-      for (final entry in record.episodes.entries) {
-        if (entry.value.episodePageUrl == episodePageUrl) {
-          KazumiLogger().i(
-              'DownloadController: episode URL already exists at position ${entry.key}, skipping');
-          return;
+      final recordKey = '${pluginName}_$bangumiId';
+      final record = _repository.getRecord(recordKey) ??
+          DownloadRecord(
+            bangumiId,
+            bangumiName,
+            bangumiCover,
+            pluginName,
+            {},
+            DateTime.now(),
+          );
+
+      var queued = 0;
+      var restarted = 0;
+      var skipped = 0;
+      final resolves = <_ResolveRequest>[];
+      final resumes = <DownloadEpisode>[];
+
+      for (final request in episodes) {
+        DownloadEpisode? existing;
+        if (request.episodePageUrl.isNotEmpty) {
+          for (final episode in record.episodes.values) {
+            if (episode.episodePageUrl == request.episodePageUrl) {
+              existing = episode;
+              break;
+            }
+          }
+        }
+        if (existing != null) {
+          if (existing.status == DownloadStatus.failed ||
+              existing.status == DownloadStatus.paused) {
+            _prepareRestart(existing);
+            restarted++;
+            if (existing.networkM3u8Url.isNotEmpty) {
+              existing.status = DownloadStatus.downloading;
+              resumes.add(existing);
+            } else {
+              existing.status = DownloadStatus.resolving;
+              resolves.add(_ResolveRequest(
+                recordKey: recordKey,
+                bangumiId: bangumiId,
+                pluginName: pluginName,
+                episodeNumber: existing.episodeNumber,
+                episodePageUrl: existing.episodePageUrl,
+              ));
+            }
+          } else {
+            skipped++;
+            KazumiLogger().i(
+              'DownloadController: episode URL already exists at position ${existing.episodeNumber}, skipping',
+            );
+          }
+          continue;
+        }
+
+        final occupied = record.episodes[request.episodeNumber];
+        if (occupied != null) {
+          // 同一集号被另一条地址占用时，先停掉旧任务，避免两个下载写进同一目录。
+          _cancelResolve(recordKey, request.episodeNumber);
+          _downloadManager.cancel(recordKey, request.episodeNumber);
+        }
+
+        record.episodes[request.episodeNumber] = DownloadEpisode(
+          request.episodeNumber,
+          request.episodeName,
+          request.road,
+          DownloadStatus.resolving,
+          0.0,
+          0,
+          0,
+          '',
+          '',
+          '',
+          null,
+          '',
+          0,
+          request.episodePageUrl,
+        );
+        queued++;
+        resolves.add(_ResolveRequest(
+          recordKey: recordKey,
+          bangumiId: bangumiId,
+          pluginName: pluginName,
+          episodeNumber: request.episodeNumber,
+          episodePageUrl: request.episodePageUrl,
+        ));
+      }
+
+      if (queued == 0 && restarted == 0) {
+        return EpisodeDownloadEnqueueSummary(
+          queued: queued,
+          restarted: restarted,
+          skipped: skipped,
+        );
+      }
+
+      await _repository.putRecord(record);
+      refreshRecords();
+      _resolveQueue.addAll(resolves);
+      _processResolveQueue();
+
+      if (resumes.isNotEmpty) {
+        final plugin = _findPlugin(pluginName);
+        if (plugin == null) {
+          for (final episode in resumes) {
+            _failEpisode(recordKey, episode.episodeNumber, '找不到插件 $pluginName');
+          }
+        } else {
+          await _startBackgroundServiceIfNeeded();
+          final httpHeaders = plugin.buildHttpHeaders();
+          final adBlockerEnabled =
+              _repository.getForceAdBlocker() || plugin.adBlocker;
+          for (final episode in resumes) {
+            await _downloadManager.enqueue(DownloadRequest(
+              recordKey: recordKey,
+              bangumiId: bangumiId,
+              pluginName: pluginName,
+              episodeNumber: episode.episodeNumber,
+              m3u8Url: episode.networkM3u8Url,
+              httpHeaders: httpHeaders,
+              adBlockerEnabled: adBlockerEnabled,
+              episode: episode,
+            ));
+          }
+          _refreshRecord(recordKey);
         }
       }
-    }
 
-    final episode = DownloadEpisode(
-      episodeNumber,
-      episodeName,
-      road,
-      DownloadStatus.resolving,
-      0.0,
-      0,
-      0,
-      '',
-      '',
-      '',
-      null,
-      '',
-      0,
-      episodePageUrl,
-    );
+      return EpisodeDownloadEnqueueSummary(
+        queued: queued,
+        restarted: restarted,
+        skipped: skipped,
+      );
+    });
+  }
 
-    record.episodes[episodeNumber] = episode;
-    await _repository.putRecord(record);
-    refreshRecords();
-
-    _resolveQueue.add(_ResolveRequest(
-      recordKey: recordKey,
-      bangumiId: bangumiId,
-      pluginName: pluginName,
-      episodeNumber: episodeNumber,
-      episodePageUrl: episodePageUrl,
-    ));
-    _processResolveQueue();
+  void _prepareRestart(DownloadEpisode episode) {
+    episode.errorMessage = '';
+    episode.progressPercent = 0.0;
+    episode.downloadedSegments = 0;
   }
 
   void _processResolveQueue() {
@@ -645,7 +810,9 @@ abstract class _DownloadController with Store {
 
       final bool downloadDanmaku =
           GStorage.getSetting(SettingsKeys.downloadDanmaku);
-      if (downloadDanmaku) {
+      // 影视记录没有 Bangumi ID，不能拿去查弹弹Play。
+      if (downloadDanmaku &&
+          DownloadTarget.isBangumiRecord(request.bangumiId)) {
         _fetchAndCacheDanmakuAsync(
           request.recordKey,
           request.bangumiId,

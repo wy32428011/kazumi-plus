@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,16 +10,64 @@ import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
-import 'package:kazumi/pages/video/video_controller.dart';
+import 'package:kazumi/pages/download/download_target.dart';
+
+Future<EpisodeDownloadEnqueueSummary> enqueueVisibleEpisodes({
+  required DownloadTarget target,
+  required int road,
+  required Iterable<int> episodeNumbers,
+}) async {
+  if (road < 0 || road >= target.roads.length) {
+    return const EpisodeDownloadEnqueueSummary(
+      queued: 0,
+      restarted: 0,
+      skipped: 0,
+    );
+  }
+  final roadData = target.roads[road];
+  final requests = <EpisodeDownloadRequest>[];
+  for (final episodeNumber in episodeNumbers) {
+    final index = episodeNumber - 1;
+    if (index < 0 || index >= roadData.data.length) continue;
+    final label = index < roadData.identifier.length
+        ? roadData.identifier[index].trim()
+        : '';
+    requests.add(EpisodeDownloadRequest(
+      episodeNumber: episodeNumber,
+      episodeName: label.isNotEmpty ? label : '第$episodeNumber集',
+      road: road,
+      episodePageUrl: roadData.data[index],
+    ));
+  }
+  final summary = await inject<DownloadController>().enqueueEpisodeDownloads(
+    bangumiId: target.recordId,
+    bangumiName: target.title,
+    bangumiCover: target.coverUrl,
+    pluginName: target.pluginName,
+    episodes: requests,
+  );
+  KazumiDialog.showToast(message: _enqueueMessage(summary, requests.length));
+  return summary;
+}
+
+String _enqueueMessage(EpisodeDownloadEnqueueSummary summary, int requested) {
+  if (summary.accepted == 0) {
+    return requested <= 1 ? '该集已在下载列表中' : '所选剧集已在下载列表中';
+  }
+  if (summary.accepted == 1) {
+    return '已加入下载队列，可在下载管理中查看';
+  }
+  return '已添加 ${summary.accepted} 集到下载队列，可在下载管理中查看';
+}
 
 class DownloadEpisodeSheet extends StatefulWidget {
   final int road;
-  final VideoPageController videoPageController;
+  final DownloadTarget target;
 
   const DownloadEpisodeSheet({
     super.key,
     required this.road,
-    required this.videoPageController,
+    required this.target,
   });
 
   @override
@@ -26,27 +75,25 @@ class DownloadEpisodeSheet extends StatefulWidget {
 }
 
 class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
-  VideoPageController get videoPageController => widget.videoPageController;
+  DownloadTarget get target => widget.target;
   final DownloadController downloadController = inject<DownloadController>();
   final GridObserverController _observerController = GridObserverController();
 
   final Set<int> _selectedEpisodes = {};
   bool _didJumpToPlayingEpisode = false;
 
-  Road get currentRoadData => videoPageController.roadList[widget.road];
+  Road get currentRoadData => target.roads[widget.road];
   int get episodeCount => currentRoadData.data.length;
 
   Set<String> _collectDownloadedUrls() {
     final record = downloadController.getRecord(
-      videoPageController.bangumiItem.id,
-      videoPageController.currentPlugin.name,
+      target.recordId,
+      target.pluginName,
     );
     final downloadedUrls = <String>{};
     if (record != null) {
       for (final entry in record.episodes.entries) {
-        if (entry.value.status == DownloadStatus.completed ||
-            entry.value.status == DownloadStatus.downloading ||
-            entry.value.status == DownloadStatus.pending) {
+        if (isEpisodeDownloadActive(entry.value)) {
           if (entry.value.episodePageUrl.isNotEmpty) {
             downloadedUrls.add(entry.value.episodePageUrl);
           }
@@ -83,15 +130,14 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
             _didJumpToPlayingEpisode = true;
             WidgetsBinding.instance.addPostFrameCallback((_) async {
               await Future<void>.delayed(Duration.zero);
-              final playbackEpisode = videoPageController.playbackEpisode;
               if (!mounted ||
-                  playbackEpisode.road != widget.road ||
+                  target.playingRoad != widget.road ||
                   episodeCount == 0 ||
                   !scrollController.hasClients) {
                 return;
               }
               final index =
-                  (playbackEpisode.episode - 1).clamp(0, episodeCount - 1);
+                  (target.playingEpisode - 1).clamp(0, episodeCount - 1);
               await _observerController.jumpTo(
                 index: index,
                 isFixedHeight: true,
@@ -103,7 +149,7 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
               MaterialBottomSheetHeader(
                 title: '下载选集',
                 description: downloadedCount > 0
-                    ? '$episodeCount 集 · 已下载 $downloadedCount 集'
+                    ? '$episodeCount 集 · $downloadedCount 集已在下载列表'
                     : '共 $episodeCount 集',
                 onClose: () => Navigator.of(context).pop(),
               ),
@@ -204,34 +250,13 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
   }
 
   void _startBatchDownload(BuildContext context) {
-    Navigator.pop(context);
-
-    final plugin = videoPageController.currentPlugin;
-    final bangumiItem = videoPageController.bangumiItem;
-
     final sortedEpisodes = _selectedEpisodes.toList()..sort();
-
-    for (final episodeNumber in sortedEpisodes) {
-      final episodePageUrl = currentRoadData.data[episodeNumber - 1];
-      final identifier = currentRoadData.identifier[episodeNumber - 1];
-
-      downloadController.startDownload(
-        bangumiId: bangumiItem.id,
-        bangumiName: bangumiItem.nameCn.isNotEmpty
-            ? bangumiItem.nameCn
-            : bangumiItem.name,
-        bangumiCover: bangumiItem.images['large'] ?? '',
-        pluginName: plugin.name,
-        episodeNumber: episodeNumber,
-        episodeName: identifier,
-        road: widget.road,
-        episodePageUrl: episodePageUrl,
-      );
-    }
-
-    KazumiDialog.showToast(
-      message: '已添加 ${sortedEpisodes.length} 集到下载队列，可在下载管理中查看',
-    );
+    Navigator.pop(context);
+    unawaited(enqueueVisibleEpisodes(
+      target: target,
+      road: widget.road,
+      episodeNumbers: sortedEpisodes,
+    ));
   }
 }
 

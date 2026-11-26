@@ -11,6 +11,7 @@ import 'package:kazumi/pages/media/source_browse_page.dart';
 import 'package:kazumi/services/media/source_media_library.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/television/tv_focus.dart';
+import 'package:kazumi/theme/kazumi_theme_tokens.dart';
 
 class ScaffoldMenu extends StatefulWidget {
   const ScaffoldMenu({super.key, required this.location});
@@ -30,6 +31,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     (index) => FocusNode(debugLabel: '电视侧栏 $index'),
   );
   final _tvOutletFocusNode = FocusNode(debugLabel: '电视内容边界');
+  bool _tvRailDimmed = false;
   late final _tvOutletTraversalPolicy = _TvOutletTraversalPolicy(
     onLeftEdge: _focusTelevisionMenu,
   );
@@ -168,63 +170,121 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     );
   }
 
-  /// 电视使用固定侧栏，初始落在推荐入口，右键进入内容区。
+  /// 电视使用固定暗房侧栏（184dp），初始落在推荐入口，右键进入内容区。
   Widget _televisionMenu(BuildContext context) {
+    final tokens = KazumiThemeTokens.of(context);
     const entries = [
-      (Icons.home_outlined, '推荐'),
-      (Icons.calendar_month_outlined, '动漫时间表'),
-      (Icons.favorite_outline, '片单'),
-      (Icons.settings_outlined, '我的'),
+      (Icons.local_movies_outlined, '放映室'),
+      (Icons.calendar_month_outlined, '时间表'),
+      (Icons.bookmarks_outlined, '片单'),
+      (Icons.tune_outlined, '我的'),
     ];
     return Scaffold(
+      backgroundColor: tokens.canvas,
       body: SafeArea(
         child: Row(
           children: [
-            SizedBox(
-              width: 170,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 12, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Kazumi Plus',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    Text('电视版', style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: 28),
-                    for (var index = 0; index < entries.length; index++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: TvAction(
-                          key: ValueKey('tv-menu-$index'),
-                          focusNode: _tvMenuFocusNodes[index],
-                          autofocus: index == _selectedIndex,
-                          label: entries[index].$2,
-                          selected: index == _selectedIndex,
-                          onPressed: () => _selectDestination(index),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 15,
+            AnimatedOpacity(
+              opacity: _tvRailDimmed ? 0.72 : 1.0,
+              duration: const Duration(milliseconds: 140),
+              child: Container(
+                width: 184,
+                decoration: BoxDecoration(
+                  color: tokens.surface1,
+                  border: Border(
+                    right: BorderSide(color: tokens.hairline, width: 1),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 27, 14, 27),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: tokens.accent,
+                              shape: BoxShape.circle,
                             ),
-                            child: Row(
-                              children: [
-                                Icon(entries[index].$1, size: 22),
-                                const SizedBox(width: 10),
-                                Expanded(child: Text(entries[index].$2)),
-                              ],
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Kazumi Plus',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.textPrimary,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '银盐放映室 · TV',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: tokens.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      for (var index = 0; index < entries.length; index++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: TvAction(
+                            key: ValueKey('tv-menu-$index'),
+                            focusNode: _tvMenuFocusNodes[index],
+                            autofocus: index == _selectedIndex,
+                            label: entries[index].$2,
+                            selected: index == _selectedIndex,
+                            onPressed: () => _selectDestination(index),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 14,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    entries[index].$1,
+                                    size: 21,
+                                    color: index == _selectedIndex
+                                        ? tokens.accent
+                                        : tokens.textSecondary,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      entries[index].$2,
+                                      style: TextStyle(
+                                        color: index == _selectedIndex
+                                            ? tokens.textPrimary
+                                            : tokens.textSecondary,
+                                        fontWeight: index == _selectedIndex
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
+                      const Spacer(),
+                      Text(
+                        '方向键导航\n确认选择 · 返回上一级',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: tokens.textMuted,
+                          height: 1.5,
+                        ),
                       ),
-                    const Spacer(),
-                    const Text(
-                      '方向键导航\n确认选择 · 返回上一级',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -233,12 +293,14 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                 focusNode: _tvOutletFocusNode,
                 canRequestFocus: false,
                 skipTraversal: true,
+                onFocusChange: (hasFocus) {
+                  if (_tvRailDimmed != hasFocus && mounted) {
+                    setState(() => _tvRailDimmed = hasFocus);
+                  }
+                },
                 child: FocusTraversalGroup(
                   policy: _tvOutletTraversalPolicy,
-                  child: _outlet(
-                    context,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
+                  child: _outlet(context),
                 ),
               ),
             ),
@@ -249,6 +311,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   }
 
   Widget _outlet(BuildContext context, {BorderRadius? borderRadius}) {
+    final tokens = KazumiThemeTokens.of(context);
     Widget child = NotificationListener<NavigationNotification>(
       // A non-poppable outlet must not override the shell's PopScope state.
       onNotification: (notification) => !notification.canHandlePop,
@@ -257,108 +320,135 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     if (borderRadius != null) {
       child = ClipRRect(borderRadius: borderRadius, child: child);
     }
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: borderRadius,
-      ),
-      child: child,
-    );
+    return ColoredBox(color: tokens.canvas, child: child);
   }
 
   Widget _bottomMenu(BuildContext context, int selectedIndex) {
+    final tokens = KazumiThemeTokens.of(context);
     return Scaffold(
+      backgroundColor: tokens.canvas,
       body: _outlet(context),
-      bottomNavigationBar: NavigationBar(
-        destinations: const <Widget>[
-          NavigationDestination(
-            selectedIcon: Icon(Icons.home),
-            icon: Icon(Icons.home_outlined),
-            label: '推荐',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.timeline),
-            icon: Icon(Icons.timeline_outlined),
-            label: '动漫时间表',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.favorite),
-            icon: Icon(Icons.favorite_outlined),
-            label: '片单',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.settings),
-            icon: Icon(Icons.settings),
-            label: '我的',
-          ),
-        ],
-        selectedIndex: selectedIndex,
-        onDestinationSelected: _selectDestination,
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: tokens.surface1,
+          border: Border(top: BorderSide(color: tokens.hairline, width: 1)),
+        ),
+        child: NavigationBar(
+          destinations: const <Widget>[
+            NavigationDestination(
+              selectedIcon: Icon(Icons.local_movies_rounded),
+              icon: Icon(Icons.local_movies_outlined),
+              label: '放映室',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(Icons.calendar_month_rounded),
+              icon: Icon(Icons.calendar_month_outlined),
+              label: '时间表',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(Icons.bookmarks_rounded),
+              icon: Icon(Icons.bookmarks_outlined),
+              label: '片单',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(Icons.tune_rounded),
+              icon: Icon(Icons.tune_outlined),
+              label: '我的',
+            ),
+          ],
+          selectedIndex: selectedIndex,
+          onDestinationSelected: _selectDestination,
+        ),
       ),
     );
   }
 
+  void _openUnifiedSearch(BuildContext context) {
+    final library = SourceMediaLibrary.instance;
+    final kind = MediaKind.parse(library.preference('home.kind'));
+    if (kind == MediaKind.anime) {
+      context.pushNamed('/search/');
+    } else {
+      context.pushNamed(
+        '/media/search',
+        arguments: MediaSearchArgs(kind: kind),
+      );
+    }
+  }
+
   Widget _sideMenu(BuildContext context, int selectedIndex) {
-    const borderRadius = BorderRadius.only(
-      topLeft: Radius.circular(16),
-      bottomLeft: Radius.circular(16),
-    );
+    final tokens = KazumiThemeTokens.of(context);
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      backgroundColor: tokens.surface1,
       body: Row(
         children: [
-          EmbeddedNativeControlArea(
-            child: NavigationRail(
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-              groupAlignment: 1,
-              leading: FloatingActionButton(
-                elevation: 0,
-                heroTag: null,
-                onPressed: () {
-                  final library = SourceMediaLibrary.instance;
-                  final kind = MediaKind.parse(library.preference('home.kind'));
-                  if (kind == MediaKind.anime) {
-                    context.pushNamed('/search/');
-                  } else {
-                    context.pushNamed(
-                      '/media/search',
-                      arguments: MediaSearchArgs(
-                        kind: kind,
-                        ruleId: library.preference('${kind.name}.source'),
-                      ),
-                    );
-                  }
-                },
-                child: const Icon(Icons.search),
+          Container(
+            decoration: BoxDecoration(
+              color: tokens.surface1,
+              border: Border(
+                right: BorderSide(color: tokens.hairline, width: 1),
               ),
-              labelType: NavigationRailLabelType.selected,
-              destinations: const <NavigationRailDestination>[
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.home),
-                  icon: Icon(Icons.home_outlined),
-                  label: Text('推荐'),
+            ),
+            child: EmbeddedNativeControlArea(
+              child: NavigationRail(
+                backgroundColor: Colors.transparent,
+                groupAlignment: -0.88,
+                minWidth: 72,
+                leading: Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 12),
+                  child: Tooltip(
+                    message: '全局检索片名、演员或导演',
+                    child: Material(
+                      color: tokens.surface2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(color: tokens.hairline),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => _openUnifiedSearch(context),
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Icon(
+                            Icons.search_rounded,
+                            color: tokens.accent,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.timeline),
-                  icon: Icon(Icons.timeline_outlined),
-                  label: Text('动漫时间表'),
-                ),
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.favorite),
-                  icon: Icon(Icons.favorite_border),
-                  label: Text('片单'),
-                ),
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.settings),
-                  icon: Icon(Icons.settings_outlined),
-                  label: Text('我的'),
-                ),
-              ],
-              selectedIndex: selectedIndex,
-              onDestinationSelected: _selectDestination,
+                labelType: NavigationRailLabelType.all,
+                destinations: const <NavigationRailDestination>[
+                  NavigationRailDestination(
+                    selectedIcon: Icon(Icons.local_movies_rounded),
+                    icon: Icon(Icons.local_movies_outlined),
+                    label: Text('放映室'),
+                  ),
+                  NavigationRailDestination(
+                    selectedIcon: Icon(Icons.calendar_month_rounded),
+                    icon: Icon(Icons.calendar_month_outlined),
+                    label: Text('时间表'),
+                  ),
+                  NavigationRailDestination(
+                    selectedIcon: Icon(Icons.bookmarks_rounded),
+                    icon: Icon(Icons.bookmarks_outlined),
+                    label: Text('片单'),
+                  ),
+                  NavigationRailDestination(
+                    selectedIcon: Icon(Icons.tune_rounded),
+                    icon: Icon(Icons.tune_outlined),
+                    label: Text('我的'),
+                  ),
+                ],
+                selectedIndex: selectedIndex,
+                onDestinationSelected: _selectDestination,
+              ),
             ),
           ),
-          Expanded(child: _outlet(context, borderRadius: borderRadius)),
+          Expanded(child: _outlet(context)),
         ],
       ),
     );

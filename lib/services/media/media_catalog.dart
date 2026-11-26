@@ -15,6 +15,7 @@ abstract interface class MediaProvider {
   Future<MediaPage> queryDiscover(
     MediaKind kind, {
     String? categoryId,
+    MediaSort? sort,
     int page = 1,
     CancelToken? cancelToken,
   });

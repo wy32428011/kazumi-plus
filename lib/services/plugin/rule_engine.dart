@@ -5,6 +5,7 @@ import 'package:kazumi/plugins/catalog_rule_config.dart';
 import 'package:kazumi/request/clients/plugin_site_client.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/media/source_traffic_guard.dart';
 import 'package:kazumi/services/plugin/api_rule_strategy.dart';
 import 'package:kazumi/services/plugin/plugin_cookie_manager.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart';
@@ -352,13 +353,14 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
     // with ours instead of being sent as a second, conflicting header.
     final headers = <String, dynamic>{
       'referer': '${config.baseUrl}/',
+      if (config.userAgent.isNotEmpty) 'user-agent': config.userAgent,
       if (cookieHeader.isNotEmpty) 'cookie': cookieHeader,
       for (final entry in request.headers.entries)
         entry.key.toLowerCase(): entry.value,
       // Clearance cookies are bound to the User-Agent they were issued to,
       // so the verified UA overrides the rule's own; sending a different one
       // would make the site serve the challenge page again.
-      if (verifiedUserAgent != null) 'user-agent': verifiedUserAgent,
+      'user-agent': ?verifiedUserAgent,
     };
     if (request.method == 'POST') {
       switch (request.bodyType) {
@@ -373,13 +375,20 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
           break;
       }
     }
-    return PluginSiteClient.instance.requestText(
-      request.url,
+    return SourceTrafficGuard.instance.run<String>(
+      url: request.url,
       method: request.method,
-      headers: headers,
-      queryParameters: request.query,
-      data: request.method == 'POST' ? request.body : null,
+      query: request.query,
       cancelToken: cancelToken,
+      deduplicate: request.method == 'GET',
+      action: (innerToken) => PluginSiteClient.instance.requestText(
+        request.url,
+        method: request.method,
+        headers: headers,
+        queryParameters: request.query,
+        data: request.method == 'POST' ? request.body : null,
+        cancelToken: innerToken,
+      ),
     );
   }
 

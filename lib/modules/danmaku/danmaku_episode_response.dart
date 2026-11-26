@@ -2,15 +2,20 @@ class DanmakuEpisode {
   int episodeId;
   String episodeTitle;
 
+  /// `dandan` 的 [episodeId] 是弹弹剧集编号；`bilibili` 时是视频 cid。
+  String catalog;
+
   DanmakuEpisode({
     required this.episodeId,
     required this.episodeTitle,
+    this.catalog = 'dandan',
   });
 
   factory DanmakuEpisode.fromJson(Map<String, dynamic> json) {
+    final episodeId = json['episodeId'];
     return DanmakuEpisode(
-      episodeId: json['episodeId'],
-      episodeTitle: json['episodeTitle'],
+      episodeId: episodeId is num ? episodeId.toInt() : episodeId as int,
+      episodeTitle: '${json['episodeTitle'] ?? ''}',
     );
   }
 

@@ -57,5 +57,15 @@ android/build/reports/problems/
 # 本任务独立工具链与安装日志
 /.tools/
 
+# 本地弹弹 Play 凭证，不入库。
+.kazumi_build_defines.env
+
 # 本地构建交付物
 /dist/
+
+# 一键打包程序由 scripts/build_packager.ps1 从源码生成。
+/一键打包.exe
+/一键打包Windows安装包.exe
+
+# 本地工具运行态锁文件，不入库。
+.claude/scheduled_tasks.lock

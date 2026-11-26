@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/services/logging/logger.dart';
 
@@ -21,6 +22,11 @@ class PlatformEnvironmentService {
   static bool get isTelevisionBuild => _televisionBuild;
   static bool get isTelevision => _formFactor == AppDeviceFormFactor.television;
   static bool get androidWebViewAvailable => _androidWebViewAvailable;
+
+  @visibleForTesting
+  static void setFormFactorForTesting(AppDeviceFormFactor factor) {
+    _formFactor = factor;
+  }
 
   /// 启动前读取系统电视模式；电视构建也兼容未声明电视模式的普通盒子。
   static Future<void> initialize() async {

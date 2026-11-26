@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.StatFs
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.app.PictureInPictureParams
 import android.graphics.drawable.Icon
 import android.util.Rational
@@ -37,6 +38,8 @@ class MainActivity: AudioServiceActivity() {
     private val CHANNEL = "com.predidit.kazumi/intent"
     private val STORAGE_CHANNEL = "com.predidit.kazumi/storage"
     private val PIP_CHANNEL = "com.predidit.kazumi/pip"
+    private val MULTICAST_CHANNEL = "com.predidit.kazumi/multicast"
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var intentChannel: MethodChannel? = null
     private var pipChannel: MethodChannel? = null
     private var downloadDirectoryChannel: MethodChannel? = null
@@ -44,6 +47,8 @@ class MainActivity: AudioServiceActivity() {
 
     private var pipIsPlaying = false
     private var pipDanmakuEnabled = false
+    // 每次播放页同步能力，影视画中画不显示弹幕操作。
+    private var pipDanmakuAvailable = true
     private var pipActionReceiverRegistered = false
     private var autoEnterPipOnHomeGesture = false
     private var pipInPlayerPage = false
@@ -84,6 +89,7 @@ class MainActivity: AudioServiceActivity() {
         downloadDirectoryHandler?.dispose()
         downloadDirectoryHandler = null
         unregisterPipActionReceiverIfNeeded()
+        releaseMulticastLock()
         // audio_service stays bound for the whole activity lifetime, so its
         // own stopSelf() never destroys a service started for playback.
         stopService(Intent(this, AudioService::class.java))
@@ -163,6 +169,20 @@ class MainActivity: AudioServiceActivity() {
         }
 
         pipChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MULTICAST_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "acquire" -> {
+                        acquireMulticastLock()
+                        result.success(null)
+                    }
+                    "release" -> {
+                        releaseMulticastLock()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         pipChannel?.setMethodCallHandler { call, result ->
             if (call.method == "isPictureInPictureSupported") {
                 result.success(isPictureInPictureSupported())
@@ -174,6 +194,7 @@ class MainActivity: AudioServiceActivity() {
             } else if (call.method == "updatePictureInPictureActions") {
                 val playing = call.argument<Boolean>("playing") ?: false
                 val danmakuEnabled = call.argument<Boolean>("danmakuEnabled") ?: false
+                pipDanmakuAvailable = call.argument<Boolean>("danmakuAvailable") ?: true
                 pipAspectWidth = call.argument<Int>("width") ?: pipAspectWidth
                 pipAspectHeight = call.argument<Int>("height") ?: pipAspectHeight
                 updatePipSourceRect(call)
@@ -187,6 +208,7 @@ class MainActivity: AudioServiceActivity() {
                 pipInPlayerPage = call.argument<Boolean>("inPlayerPage") ?: false
                 if (!pipInPlayerPage) {
                     pipSourceRect = null
+                    pipDanmakuAvailable = true
                 }
                 refreshWindowBackground()
                 refreshPictureInPictureParamsIfNeeded()
@@ -195,6 +217,20 @@ class MainActivity: AudioServiceActivity() {
                 result.notImplemented()
             }
         }
+    }
+
+    private fun acquireMulticastLock() {
+        if (multicastLock?.isHeld == true) return
+        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        multicastLock = wifi.createMulticastLock("kazumi-ssdp").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    private fun releaseMulticastLock() {
+        val lock = multicastLock ?: return
+        if (lock.isHeld) lock.release()
     }
 
     private fun openWithMime(url: String, mimeType: String) {
@@ -376,15 +412,18 @@ class MainActivity: AudioServiceActivity() {
             return emptyList()
         }
 
-        val allActions = mutableListOf<RemoteAction>(
-            createPipAction(
+        val allActions = mutableListOf<RemoteAction>()
+        if (pipDanmakuAvailable) {
+            allActions.add(createPipAction(
                 action = actionPipToggleDanmaku,
                 requestCode = 1003,
                 iconRes = if (pipDanmakuEnabled) R.drawable.ic_pip_danmaku_on else R.drawable.ic_pip_danmaku_off,
                 title = if (pipDanmakuEnabled) "Danmaku On" else "Danmaku Off",
                 description = if (pipDanmakuEnabled) "Turn off danmaku" else "Turn on danmaku",
                 enabled = true
-            ),
+            ))
+        }
+        allActions.addAll(listOf(
             createPipAction(
                 action = actionPipPlayPause,
                 requestCode = 1001,
@@ -401,7 +440,7 @@ class MainActivity: AudioServiceActivity() {
                 description = "Forward by custom seconds",
                 enabled = true
             )
-        )
+        ))
 
         val maxActions = maxNumPictureInPictureActions
         if (allActions.size > maxActions) {
@@ -436,6 +475,8 @@ class MainActivity: AudioServiceActivity() {
     }
 
     private fun notifyFlutterPipAction(action: String) {
+        // 旧画中画通知也必须遵守当前内容能力，避免切换到影视后仍能触发弹幕。
+        if (action == "toggle_danmaku" && !pipDanmakuAvailable) return
         pipChannel?.invokeMethod("onAction", mapOf("action" to action))
     }
 

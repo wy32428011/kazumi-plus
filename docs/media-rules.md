@@ -13,7 +13,7 @@
 
 ## 操作配置
 
-每个操作包含 `mode: api|xpath`、`request`、`listPath`、`fields`。请求复用现有 GET/POST、headers/query、JSON/form body 和 Cookie 机制，变量支持 `@keyword`、`@source`、`@categoryId`、`@page`、`@seasonId`、`@mediaType`。
+每个操作包含 `mode: api|xpath`、`request`、`listPath`、`fields`。请求复用现有 GET/POST、headers/query、JSON/form body 和 Cookie 机制，变量支持 `@keyword`、`@source`、`@categoryId`、`@page`、`@seasonId`、`@mediaType`、`@sort`。
 
 资料条目字段要求 `title`、`source`、`categoryId`；分类要求 `id`、`name`。可选资料字段为 `id`、`poster`、`year`、`region`、`status`、`rating`、`description`、`aliases`、`genres`、`cast`。无站内编号时采用完整详情入口后备身份，保留查询参数；不要使用临时媒体 URL 或作品名称充当作品 ID。
 
@@ -38,6 +38,29 @@ API 字段可写 JSONPath 字符串；XPath 字段可写路径，或 `{ "path": 
 | `kazumi-plus.subo` | `https://subocj.com/api.php/provide/vod/from/subm3u8/` | 6–13 / 10 | 14–18、20、21 / 14 |
 | `kazumi-plus.modu` | `https://www.mdzyapi.com/api.php/provide/vod/` | 5、10–25 / 15 | 26–33 / 26 |
 | `kazumi-plus.guangsu` | `https://api.guangsuapi.com/api.php/provide/vod/from/gsm3u8/` | 6–12、20、24 / 10 | 13–16、21–23 / 13 |
+
+## 扩展预置来源及画质核验（2026-11-11 修订）
+
+以下来源支持 `anime`、`tv`、`movie`。来源名称、目录顺序及清单中的分辨率声明均不构成全站画质保证；预置显示名不再附加“4K”“蓝光高码”等未经逐片证实的标签。已经安装的用户规则不会被强制覆盖。
+
+本轮实际分片核验：豪华与新浪的《街头霸王2026》样本为 1920×1080，猫眼《无所不能》为 800×448；魔都样本的子清单连接失败。未验证到可用 4K 样本，不能宣称全站 4K、蓝光或无水印。详见 [画质与播放核验记录](playback-quality-2026-11-11.md)。
+
+| 稳定编号 | 名称 | 接口 | 画质规格 | 动漫白名单 / 默认 | 电影白名单 / 默认 | 电视剧白名单 / 默认 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `kazumi-plus.maoyan` | 猫眼影视 | `https://api.maoyanapi.top/api.php/provide/vod/from/mym3u8/` | 抽样 800×448 | 4、29、38–40 / 40 | 6–12、20–29、45、54 / 6 | 13–16、30–33 / 13 |
+| `kazumi-plus.modu` | 魔都影视 | `https://www.mdzyapi.com/api.php/provide/vod/` | 清单声明 1080P，分片未证实 | 1–5 / 2 | 5、10–25 / 15 | 26–33 / 26 |
+| `kazumi-plus.haohua` | 豪华影视 | `https://hhzyapi.com/api.php/provide/vod/from/hhm3u8/` | 抽样 1920×1080 | 17、23–26 / 25 | 9–16、23、34–37 / 9 | 3–7、20、28 / 20 |
+| `kazumi-plus.xinlang` | 新浪影视 | `https://api.xinlangapi.com/xinlangapi.php/provide/vod/from/xlm3u8/` | 抽样 1920×1080 | 3、17、38–40 / 39 | 5–12、17、41–44 / 6 | 13–16、18、20、21 / 13 |
+| `kazumi-plus.huya` | 虎牙影视 | `https://www.huyaapi.com/api.php/provide/vod/from/hym3u8/` | 本轮未核验 | 17、23–26 / 25 | 9–16、23 / 9 | 3–7、20、28 / 20 |
+| `kazumi-plus.jinying` | 金鹰影视 | `https://jyzyapi.com/provide/vod/from/jinyingm3u8/` | 本轮未核验 | 17、23–26 / 25 | 9–16、23 / 9 | 3–7、20、28 / 20 |
+| `kazumi-plus.ikun` | ikun影视 | `https://ikunzyapi.com/api.php/provide/vod/from/ikm3u8/` | 本轮未核验 | 4、22、35–37 / 37 | 6–22 / 6 | 23–30 / 23 |
+| `kazumi-plus.guangsu` | 光速影视 | `https://api.guangsuapi.com/api.php/provide/vod/from/gsm3u8/` | 本轮未核验 | 4、20、41–43 / 42 | 6–12、20、24 / 10 | 13–16、21–23 / 13 |
+| `kazumi-plus.subo` | 速播影视 | `https://subocj.com/api.php/provide/vod/from/subm3u8/` | 本轮未核验 | 3、13、24–26 / 25 | 6–13 / 10 | 14–18、20、21 / 14 |
+| `kazumi-plus.baofeng` | 暴风影视 | `https://bfzyapi.com/api.php/provide/vod/` | 本轮未核验 | 39–44、50 / 41 | 21–28 / 26 | 31–38 / 31 |
+| `kazumi-plus.hongniu` | 红牛影视 | `https://www.hongniuzy2.com/api.php/provide/vod/from/hnm3u8/` | 抽样 1920×1080（剧）、1920×800（影）、1280×720（漫） | 20、36–38 / 37 | 5–11、19、20 / 5 | 12–18 / 12 |
+| `kazumi-plus.iqiyi` | 爱奇艺影视 | `https://iqiyizyapi.com/api.php/provide/vod/` | 抽样 1920×1080（影/剧/漫） | 1–5 / 2 | 5、10–24 / 10 | 26–33 / 26 |
+| `kazumi-plus.zy360` | 360影视 | `https://360zy.com/api.php/provide/vod/` | 抽样 1920×1080（影/剧/漫） | 29、38–40 / 40 | 6–12、20–27、29、45 / 6 | 13–16、30–33 / 13 |
+| `kazumi-plus.4kav` | 4K-AV | `https://www.4k-av.com/movie/`（XPath） | 抽样 3840×1608 HEVC 10-bit HDR 60fps（部分老片为 1080P） | 未启用 | `/movie/` / `/movie/` | 未启用 |
 
 新增规则沿用 `class/list/pagecount`、`vod_id` 及 `vod_play_from/vod_play_url` 分隔字符串。速播和光速指定源站的 M3U8 线路接口，魔都实测返回 `modum3u8`；不引入额外解析服务器。电影分类按源站实际返回包含动画电影、纪录片等电影内容；综艺、体育及其他未列出的分类不会混入频道。
 

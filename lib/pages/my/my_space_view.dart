@@ -12,6 +12,7 @@ enum MyDestination {
   theme,
   player,
   danmaku,
+  sourceHealth,
   rules,
   history,
   downloads,
@@ -259,6 +260,11 @@ class _CompactSpaceLayout extends StatelessWidget {
         ContentSection.group(
           title: '内容与偏好',
           children: [
+            _entry(
+              '片源健康与智能选源',
+              Icons.monitor_heart_rounded,
+              MyDestination.sourceHealth,
+            ),
             _entry('规则设置', Icons.extension_rounded, MyDestination.rules),
             _entry('外观设置', Icons.palette_rounded, MyDestination.theme),
             _entry('播放设置', Icons.play_circle_rounded, MyDestination.player),
@@ -644,6 +650,7 @@ class _PreferencesPanel extends StatelessWidget {
   final ValueChanged<MyDestination> onOpen;
 
   static const _entries = [
+    ('选源', Icons.monitor_heart_rounded, MyDestination.sourceHealth),
     ('外观', Icons.palette_rounded, MyDestination.theme),
     ('播放', Icons.play_circle_rounded, MyDestination.player),
     ('弹幕', Icons.subtitles_rounded, MyDestination.danmaku),

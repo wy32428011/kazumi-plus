@@ -15,6 +15,7 @@ import 'package:kazumi/pages/settings/player_settings.dart';
 import 'package:kazumi/pages/settings/proxy/proxy_module.dart';
 import 'package:kazumi/pages/settings/renderer_settings.dart';
 import 'package:kazumi/pages/settings/settings_page.dart';
+import 'package:kazumi/pages/settings/source_health_page.dart';
 import 'package:kazumi/pages/settings/storage_settings.dart';
 import 'package:kazumi/pages/settings/super_resolution_settings.dart';
 import 'package:kazumi/pages/settings/sync/bangumi_sync_page.dart';
@@ -83,6 +84,10 @@ final settingsModule = createModule(
           ..module(aboutModule)
           ..module(pluginModule)
           ..module(danmakuModule)
+          ..route(
+            '/source-health',
+            child: (context, state) => const SourceHealthPage(),
+          )
           ..route(
             '/download-settings',
             child: (context, state) => const DownloadSettingsPage(),

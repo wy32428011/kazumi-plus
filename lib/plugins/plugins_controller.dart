@@ -87,11 +87,22 @@ abstract class _PluginsController with Store {
   static const _maxConcurrentRuleDownloads = 4;
 
   // 稳定编号与随包资源一一对应，新增来源独立记录安装决定。
+  // 排列不代表画质保证；分辨率以每个视频的实际轨道为准。
   static const _plusPresetAssets = {
-    'kazumi-plus.baofeng': 'assets/plugins/baofeng.json',
-    'kazumi-plus.subo': 'assets/plugins/subo.json',
+    'kazumi-plus.maoyan': 'assets/plugins/maoyan.json',
     'kazumi-plus.modu': 'assets/plugins/modu.json',
+    'kazumi-plus.haohua': 'assets/plugins/haohua.json',
+    'kazumi-plus.xinlang': 'assets/plugins/xinlang.json',
+    'kazumi-plus.huya': 'assets/plugins/huya.json',
+    'kazumi-plus.jinying': 'assets/plugins/jinying.json',
+    'kazumi-plus.ikun': 'assets/plugins/ikun.json',
     'kazumi-plus.guangsu': 'assets/plugins/guangsu.json',
+    'kazumi-plus.subo': 'assets/plugins/subo.json',
+    'kazumi-plus.baofeng': 'assets/plugins/baofeng.json',
+    'kazumi-plus.hongniu': 'assets/plugins/hongniu.json',
+    'kazumi-plus.iqiyi': 'assets/plugins/iqiyi.json',
+    'kazumi-plus.zy360': 'assets/plugins/zy360.json',
+    'kazumi-plus.4kav': 'assets/plugins/4kav.json',
   };
 
   @observable
@@ -133,7 +144,10 @@ abstract class _PluginsController with Store {
       final marker = File('${newPluginDirectory!.path}/plus_seed_v1.json');
       final processedRuleIds = await _readPlusSeedRuleIds(marker);
       for (final entry in _plusPresetAssets.entries) {
-        if (processedRuleIds.contains(entry.key)) continue;
+        if (processedRuleIds.contains(entry.key)) {
+          // 已处理的预置源严格保留用户改动（域名、名称、请求头、禁启用或删除决定），绝不覆写。
+          continue;
+        }
         final raw = await rootBundle.loadString(entry.value);
         final preset = Plugin.fromJson(
           Map<String, dynamic>.from(jsonDecode(raw)),

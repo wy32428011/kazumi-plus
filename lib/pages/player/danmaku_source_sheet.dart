@@ -16,6 +16,7 @@ import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
+import 'package:kazumi/request/apis/bilibili_danmaku_api.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -188,12 +189,15 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       _segmentStart = null;
     });
     try {
-      final response =
-          await DanmakuApi.getDanDanEpisodesByDanDanBangumiID(anime.animeId);
+      final response = anime.catalog == BilibiliDanmakuApi.catalog
+          ? null
+          : await DanmakuApi.getDanDanEpisodesByDanDanBangumiID(anime.animeId);
+      final episodes = response?.episodes ??
+          await BilibiliDanmakuApi.episodes(anime.animeId);
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _episodes = response.episodes;
+        _episodes = episodes;
         if (_episodes.isEmpty) _error = '暂无分集';
       });
     } catch (error) {
@@ -210,8 +214,13 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
     setState(() => _loading = true);
     try {
       widget.onBeforeApply();
-      final hasDanmakus = await widget.danmakuController
-          .getDanDanmakuByEpisodeID(episode.episodeId);
+      widget.danmakuController.clearAndInvalidateScheduledDanmakus();
+      final hasDanmakus = episode.catalog == BilibiliDanmakuApi.catalog
+          ? await widget.danmakuController.replaceDanmakus(
+              await BilibiliDanmakuApi.comments(episode.episodeId),
+            )
+          : await widget.danmakuController
+              .getDanDanmakuByEpisodeID(episode.episodeId);
       if (!mounted) return;
       widget.danmakuController.setDanmakuEnabled(hasDanmakus);
       KazumiDialog.dismiss(context: context);

@@ -10,14 +10,22 @@ class PlaybackCachePolicy {
   PlaybackCachePolicy({
     required bool Function() isLocalPlayback,
     required Player? Function() currentPlayer,
-  })  : _isLocalPlayback = isLocalPlayback,
-        _currentPlayer = currentPlayer;
+    required bool Function() isPrefetchSuspended,
+    void Function(bool constrained)? onConstrainedChanged,
+  }) : _isLocalPlayback = isLocalPlayback,
+       _currentPlayer = currentPlayer,
+       _isPrefetchSuspended = isPrefetchSuspended,
+       _onConstrainedChanged = onConstrainedChanged;
 
-  static const int _lowMemoryBufferSize = 2 * 1024 * 1024;
-  static const int _defaultBufferSize = 1500 * 1024 * 1024;
+  // 字节数是上限，实际缓冲时长取决于码率；前向与回看分别限额，
+  // 避免长时间播放高码率视频时缓存增长到数 GB。
+  static const int _lowMemoryBufferSize = 64 * 1024 * 1024;
+  static const int _defaultBufferSize = 256 * 1024 * 1024;
 
   final bool Function() _isLocalPlayback;
   final Player? Function() _currentPlayer;
+  final bool Function() _isPrefetchSuspended;
+  final void Function(bool constrained)? _onConstrainedChanged;
   final AsyncSerialQueue _writes = AsyncSerialQueue();
 
   StreamSubscription<void>? _settingsSubscription;
@@ -27,12 +35,15 @@ class PlaybackCachePolicy {
       !_isLocalPlayback() &&
       MeteredNetworkService.isMetered;
 
-  int get bufferSize => LowMemoryMode.current.isEnabled(
-        isMetered: MeteredNetworkService.isMetered,
-        isLocalPlayback: _isLocalPlayback(),
-      )
-          ? _lowMemoryBufferSize
-          : _defaultBufferSize;
+  bool get _constrained => LowMemoryMode.current.isEnabled(
+    isMetered: MeteredNetworkService.isMetered,
+    isLocalPlayback: _isLocalPlayback(),
+  );
+
+  bool get isConstrained => _constrained;
+
+  int get bufferSize =>
+      _constrained ? _lowMemoryBufferSize : _defaultBufferSize;
 
   void startWatching() {
     if (_settingsSubscription != null) {
@@ -61,9 +72,18 @@ class PlaybackCachePolicy {
         if (!identical(_currentPlayer(), player)) {
           return;
         }
-        final size = bufferSize.toString();
-        await pp.setProperty('demuxer-max-bytes', size);
-        await pp.setProperty('demuxer-max-back-bytes', size);
+        final constrained = _constrained;
+        _onConstrainedChanged?.call(constrained);
+        final forward = constrained ? _lowMemoryBufferSize : _defaultBufferSize;
+        final backward = (constrained ? 16 : 64) * 1024 * 1024;
+        await pp.setProperty('demuxer-max-bytes', forward.toString());
+        await pp.setProperty('demuxer-max-back-bytes', backward.toString());
+        if (!identical(_currentPlayer(), player)) return;
+        final seconds = _isPrefetchSuspended()
+            ? '0'
+            : (constrained ? '30' : '150');
+        await pp.setProperty('demuxer-readahead-secs', seconds);
+        await pp.setProperty('cache-secs', seconds);
       });
     } catch (e) {
       KazumiLogger().w(

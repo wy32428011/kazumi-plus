@@ -115,3 +115,15 @@ class DownloadStatus {
   static const int failed = 4;
   static const int paused = 5;
 }
+
+/// 已完成或仍在队列中的集不需要再次加入。失败和暂停可以重新下载。
+bool isEpisodeDownloadActive(DownloadEpisode? episode) {
+  return switch (episode?.status) {
+    DownloadStatus.completed ||
+    DownloadStatus.downloading ||
+    DownloadStatus.pending ||
+    DownloadStatus.resolving =>
+      true,
+    _ => false,
+  };
+}

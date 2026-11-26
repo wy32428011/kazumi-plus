@@ -6,12 +6,18 @@ class _SourceSearchGroup {
     required this.keyword,
     required this.status,
     required this.results,
+    this.verifiedBadge = '',
+    this.ttfbMs,
+    this.isCircuitOpen = false,
   });
 
   final String name;
   final String keyword;
   final PluginSearchStatus status;
   final List<SearchItem> results;
+  final String verifiedBadge;
+  final int? ttfbMs;
+  final bool isCircuitOpen;
 
   bool get isSearching => status == PluginSearchStatus.pending;
   bool get hasResults =>
@@ -131,8 +137,8 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
           MaterialBottomSheetHeader(
             title: '播放来源',
             description: pending > 0
-                ? '检索中 ${widget.groups.length - pending}/${widget.groups.length} · $resultCount 个结果'
-                : '${widget.groups.length} 个来源 · $resultCount 个结果',
+                ? '检索中 ${widget.groups.length - pending}/${widget.groups.length}  $resultCount 个结果'
+                : '${widget.groups.length} 个来源  $resultCount 个结果',
             compact: true,
             onClose: widget.onClose,
           ),
@@ -227,11 +233,74 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
                           child: Row(
                             children: [
                               Expanded(
-                                child: Text(
-                                  group.name,
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      group.name,
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            color: KazumiThemeTokens.of(
+                                              context,
+                                            ).textPrimary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    if (group.verifiedBadge.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 1.5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: KazumiThemeTokens.of(
+                                            context,
+                                          ).accentSoft,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          group.verifiedBadge,
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: KazumiThemeTokens.of(
+                                              context,
+                                            ).accent,
+                                            fontFeatures: const [
+                                              FontFeature.tabularFigures(),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    if (group.ttfbMs != null &&
+                                        group.ttfbMs! > 0)
+                                      Text(
+                                        '${group.ttfbMs}ms',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: KazumiThemeTokens.of(
+                                            context,
+                                          ).textMuted,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                      ),
+                                    if (group.isCircuitOpen)
+                                      Text(
+                                        '近期故障',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: KazumiThemeTokens.of(
+                                            context,
+                                          ).warning,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -239,6 +308,9 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
                                 group.statusLabel,
                                 style: theme.textTheme.labelMedium?.copyWith(
                                   color: colors.onSurfaceVariant,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 8),

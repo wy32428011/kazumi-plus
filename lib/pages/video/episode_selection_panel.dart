@@ -16,8 +16,9 @@ class EpisodeSelectionPanel extends StatefulWidget {
     required this.selectedRoad,
     required this.selectedEpisode,
     required this.onEpisodeSelected,
-    required this.downloads,
+    this.downloads = const {},
     this.onDownload,
+    this.onDownloadEpisode,
     this.isOffline = false,
     this.isPlaying = false,
     this.disableAnimations = false,
@@ -29,6 +30,7 @@ class EpisodeSelectionPanel extends StatefulWidget {
   final int selectedEpisode;
   final void Function(int episode, int road) onEpisodeSelected;
   final ValueChanged<int>? onDownload;
+  final void Function(int episode, int road)? onDownloadEpisode;
   final Map<String, DownloadEpisode> downloads;
   final bool isOffline;
   final bool isPlaying;
@@ -173,9 +175,9 @@ class EpisodeSelectionPanelState extends State<EpisodeSelectionPanel> {
                           onPressed: _canLocate ? revealCurrentEpisode : null,
                           icon: const Icon(Icons.my_location_rounded, size: 20),
                         ),
-                        if (!widget.isOffline)
+                        if (!widget.isOffline && widget.onDownload != null)
                           IconButton.filledTonal(
-                            tooltip: '缓存剧集',
+                            tooltip: '批量缓存',
                             onPressed: count > 0 && widget.onDownload != null
                                 ? () => widget.onDownload!(_visibleRoad)
                                 : null,
@@ -221,6 +223,16 @@ class EpisodeSelectionPanelState extends State<EpisodeSelectionPanel> {
                         isOffline: widget.isOffline,
                         download: widget.downloads[road.data[index]],
                         disableAnimations: widget.disableAnimations,
+                        showDownload: !widget.isOffline &&
+                            widget.onDownloadEpisode != null,
+                        onDownload: isEpisodeDownloadActive(
+                          widget.downloads[road.data[index]],
+                        )
+                            ? null
+                            : () => widget.onDownloadEpisode!(
+                                  episode,
+                                  _visibleRoad,
+                                ),
                         onTap: () =>
                             widget.onEpisodeSelected(episode, _visibleRoad),
                       );
@@ -520,6 +532,8 @@ class _EpisodeRow extends StatefulWidget {
     required this.disableAnimations,
     required this.onTap,
     this.download,
+    this.showDownload = false,
+    this.onDownload,
   });
 
   final String name;
@@ -531,6 +545,8 @@ class _EpisodeRow extends StatefulWidget {
   final bool disableAnimations;
   final VoidCallback onTap;
   final DownloadEpisode? download;
+  final bool showDownload;
+  final VoidCallback? onDownload;
 
   @override
   State<_EpisodeRow> createState() => _EpisodeRowState();
@@ -594,98 +610,143 @@ class _EpisodeRowState extends State<_EpisodeRow>
             : downloadLabel,
     ].join(' · ');
 
-    return Semantics(
-      button: true,
-      onTap: widget.onTap,
-      selected: widget.selected,
-      inMutuallyExclusiveGroup: true,
-      label: '${widget.name}，$playbackLabel'
-          '${downloadLabel == null ? '' : '，$downloadLabel'}',
-      child: Tooltip(
-        message: '${widget.name} · $playbackLabel'
-            '${downloadLabel == null ? '' : ' · $downloadLabel'}',
-        excludeFromSemantics: true,
-        child: AnimatedBuilder(
-          animation: _press,
-          builder: (context, child) {
-            final restShape = widget.selected
-                ? BorderRadius.circular(20)
-                : BorderRadius.vertical(
-                    top: Radius.circular(widget.first ? 20 : 4),
-                    bottom: Radius.circular(widget.last ? 20 : 4),
-                  );
-            final press = _press.value.clamp(0.0, 1.0);
-            return Padding(
-              padding: EdgeInsets.only(bottom: widget.last ? 0 : 2),
-              child: Material(
-                animationDuration: _reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 200),
-                color: widget.selected
-                    ? colors.primary
-                    : colors.surfaceContainerLow,
-                borderRadius: BorderRadius.lerp(
-                    restShape, BorderRadius.circular(12), press),
-                clipBehavior: Clip.antiAlias,
-                child: child,
-              ),
-            );
-          },
-          child: InkWell(
-            onTap: widget.onTap,
-            onHighlightChanged: _setPressed,
-            excludeFromSemantics: true,
-            overlayColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.pressed) ||
-                  states.contains(WidgetState.focused)) {
-                return foreground.withValues(alpha: 0.1);
-              }
-              if (states.contains(WidgetState.hovered)) {
-                return foreground.withValues(alpha: 0.08);
-              }
-              return null;
-            }),
-            child: ExcludeSemantics(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 56),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: foreground,
-                          fontWeight: widget.selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
+    final downloadTooltip = switch (status) {
+      DownloadStatus.completed => '已缓存',
+      DownloadStatus.downloading ||
+      DownloadStatus.pending ||
+      DownloadStatus.resolving =>
+        '正在缓存',
+      DownloadStatus.paused => '继续缓存',
+      DownloadStatus.failed => '重新缓存',
+      _ => '缓存本集',
+    };
+    final downloadIcon = switch (status) {
+      DownloadStatus.completed => Icons.download_done_rounded,
+      DownloadStatus.downloading ||
+      DownloadStatus.pending ||
+      DownloadStatus.resolving =>
+        Icons.downloading_rounded,
+      DownloadStatus.failed => Icons.refresh_rounded,
+      _ => Icons.download_rounded,
+    };
+
+    return AnimatedBuilder(
+      animation: _press,
+      builder: (context, child) {
+        final restShape = widget.selected
+            ? BorderRadius.circular(20)
+            : BorderRadius.vertical(
+                top: Radius.circular(widget.first ? 20 : 4),
+                bottom: Radius.circular(widget.last ? 20 : 4),
+              );
+        final press = _press.value.clamp(0.0, 1.0);
+        return Padding(
+          padding: EdgeInsets.only(bottom: widget.last ? 0 : 2),
+          child: Material(
+            animationDuration: _reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 200),
+            color: widget.selected
+                ? colors.primary
+                : colors.surfaceContainerLow,
+            borderRadius: BorderRadius.lerp(
+                restShape, BorderRadius.circular(12), press),
+            clipBehavior: Clip.antiAlias,
+            child: child,
+          ),
+        );
+      },
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              button: true,
+              onTap: widget.onTap,
+              selected: widget.selected,
+              inMutuallyExclusiveGroup: true,
+              label: '${widget.name}，$playbackLabel'
+                  '${downloadLabel == null ? '' : '，$downloadLabel'}',
+              child: Tooltip(
+                message: '${widget.name} · $playbackLabel'
+                    '${downloadLabel == null ? '' : ' · $downloadLabel'}',
+                excludeFromSemantics: true,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  onHighlightChanged: _setPressed,
+                  excludeFromSemantics: true,
+                  overlayColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.pressed) ||
+                        states.contains(WidgetState.focused)) {
+                      return foreground.withValues(alpha: 0.1);
+                    }
+                    if (states.contains(WidgetState.hovered)) {
+                      return foreground.withValues(alpha: 0.08);
+                    }
+                    return null;
+                  }),
+                  child: ExcludeSemantics(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 56),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          16,
+                          widget.showDownload ? 0 : 20,
+                          16,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: foreground,
+                                fontWeight: widget.selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            if (supportingText.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                supportingText,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: widget.selected
+                                      ? foreground
+                                      : status == DownloadStatus.failed
+                                          ? colors.error
+                                          : colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      if (supportingText.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          supportingText,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: widget.selected
-                                ? foreground
-                                : status == DownloadStatus.failed
-                                    ? colors.error
-                                    : colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+          if (widget.showDownload)
+            IconButton(
+              tooltip: '$downloadTooltip ${widget.name}',
+              onPressed: widget.onDownload,
+              style: IconButton.styleFrom(
+                foregroundColor: widget.selected
+                    ? colors.onPrimary
+                    : colors.onSurfaceVariant,
+                disabledForegroundColor: (widget.selected
+                        ? colors.onPrimary
+                        : colors.onSurfaceVariant)
+                    .withValues(alpha: 0.7),
+              ),
+              icon: Icon(downloadIcon),
+            ),
+        ],
       ),
     );
   }

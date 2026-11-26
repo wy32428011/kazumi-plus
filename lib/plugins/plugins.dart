@@ -252,6 +252,7 @@ class Plugin {
   RuleExecutionConfig get _executionConfig => RuleExecutionConfig(
         pluginName: name,
         baseUrl: baseUrl,
+        userAgent: userAgent,
         usePost: usePost,
         searchMode: searchMode,
         chapterMode: chapterMode,
@@ -325,10 +326,14 @@ class Plugin {
   }
 
   /// Headers used when resolving or downloading the final media resource.
+  ///
+  /// 规则未单独填写 referer 时用来源站点，与播放器打开直链的方式一致，
+  /// 避免分片请求被防盗链拒绝。
   Map<String, String> buildHttpHeaders() {
+    final refererValue = referer.isNotEmpty ? referer : baseUrl;
     return {
       'user-agent': userAgent.isEmpty ? getRandomUA() : userAgent,
-      if (referer.isNotEmpty) 'referer': referer,
+      if (refererValue.isNotEmpty) 'referer': refererValue,
     };
   }
 }

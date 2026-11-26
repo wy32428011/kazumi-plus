@@ -10,10 +10,14 @@ class CatalogParseResult {
     required this.rows,
     required this.hasMore,
     this.seasons = const [],
+    this.rawNodes = const [],
   });
   final List<Map<String, Object?>> rows;
   final bool hasMore;
   final List<Map<String, Object?>> seasons;
+
+  /// 非破坏式保留 API 原始节点（用于补读 MacCMS 豆瓣 ID/评分/导演/播放列表，不改写规则配置）。
+  final List<Object?> rawNodes;
 }
 
 class CatalogRuleStrategy {
@@ -72,9 +76,11 @@ class CatalogRuleStrategy {
         '启用 seasonsPath 时必须配置 seasonFields.id、seasonFields.name 和 seasonFields.source',
       );
     }
-    const ApiRuleStrategy().prepareRequest(operation.request, const {
+    const ApiRuleStrategy().prepareRequest(operation.request, {
       'keyword': 'example',
-      'source': '1',
+      'source': operation.mode == RuleMode.xpath
+          ? 'https://example.com/item/1'
+          : '1',
       'categoryId': '1',
       'page': 1,
       'seasonId': '',
@@ -142,6 +148,7 @@ class CatalogRuleStrategy {
     return CatalogParseResult(
       rows: rows,
       seasons: seasons,
+      rawNodes: nodes,
       hasMore: operation.totalPagesPath.isNotEmpty
           ? page < (int.tryParse('${read(operation.totalPagesPath)}') ?? page)
           : _truthy(read(operation.hasMorePath)),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/plugins/plugins.dart';
@@ -10,6 +11,7 @@ import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/history/history_module.dart';
 import 'package:kazumi/repositories/download_repository.dart';
 import 'package:kazumi/services/download/download_manager.dart';
+import 'package:kazumi/services/media/source_health_repository.dart';
 import 'package:kazumi/services/video_source/services.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:mobx/mobx.dart';
@@ -26,34 +28,12 @@ import 'package:kazumi/utils/async_session.dart';
 import 'package:kazumi/services/platform/display_mode_service.dart';
 import 'package:kazumi/pages/video/video_fullscreen_controller.dart';
 
+import 'package:kazumi/pages/player/player_presentation_context.dart';
+export 'package:kazumi/pages/player/player_presentation_context.dart' show VideoEpisodeSelection;
+
 part 'video_controller.g.dart';
 
 class VideoPageController = _VideoPageController with _$VideoPageController;
-
-class VideoEpisodeSelection {
-  const VideoEpisodeSelection({
-    required this.episode,
-    required this.road,
-  });
-
-  final int episode;
-  final int road;
-
-  @override
-  bool operator ==(Object other) {
-    return other is VideoEpisodeSelection &&
-        other.episode == episode &&
-        other.road == road;
-  }
-
-  @override
-  int get hashCode => Object.hash(episode, road);
-
-  @override
-  String toString() {
-    return 'VideoEpisodeSelection(episode: $episode, road: $road)';
-  }
-}
 
 abstract class _VideoPageController with Store implements Disposable {
   _VideoPageController(
@@ -138,6 +118,12 @@ abstract class _VideoPageController with Store implements Disposable {
 
   late Plugin currentPlugin;
 
+  /// 同作品的其他动漫插件候选，用于播放器内热切源与自动容灾。
+  List<AnimeSourceCandidate> alternateSources = const [];
+
+  /// 最近一次解析得到的真实播放流 CDN 归属组。
+  String currentCdnGroup = '';
+
   String _offlinePluginName = '';
 
   final HistoryController historyController;
@@ -162,6 +148,9 @@ abstract class _VideoPageController with Store implements Disposable {
         currentPlugin = args.plugin;
         title = args.title;
         src = args.src;
+        alternateSources = List<AnimeSourceCandidate>.unmodifiable(
+          args.alternateSources,
+        );
         roadList.clear();
         roadList.addAll(args.roads);
       case OfflineVideoPlaybackArgs():
@@ -415,6 +404,38 @@ abstract class _VideoPageController with Store implements Disposable {
     _errorMessage = message;
   }
 
+  /// 播中热切至同作品的另一动漫插件源，保留 [bangumiItem] 主身份、弹幕时间轴与历史同步通道。
+  Future<void> switchSource({
+    required Plugin plugin,
+    required String title,
+    required String src,
+    required List<Road> roads,
+    required int episode,
+    int currentRoad = 0,
+    int offset = 0,
+    required PlayerController playerController,
+  }) async {
+    if (isOfflineMode || roads.isEmpty) return;
+    runInAction(() {
+      currentPlugin = plugin;
+      this.title = title;
+      this.src = src;
+      currentCdnGroup = '';
+      roadList
+        ..clear()
+        ..addAll(roads);
+    });
+    final safeRoad = currentRoad.clamp(0, roads.length - 1);
+    final epCount = roads[safeRoad].data.length;
+    final safeEpisode = epCount > 0 ? episode.clamp(1, epCount) : 1;
+    await changeEpisode(
+      safeEpisode,
+      currentRoad: safeRoad,
+      offset: offset,
+      playerController: playerController,
+    );
+  }
+
   Future<void> changeEpisode(
     int episode, {
     int currentRoad = 0,
@@ -428,7 +449,13 @@ abstract class _VideoPageController with Store implements Disposable {
     );
     _beginEpisodeSwitch(selection);
     _danmakuSessions.cancel();
-    playerController.danmaku.finishDanmakuLoad();
+    // 播放控件持续挂载，切集必须主动撤销旧画布及已排队的弹幕。
+    try {
+      playerController.danmaku.clearAndInvalidateScheduledDanmakus();
+    } catch (_) {
+      // 首播画布可能尚未创建；方法已先推进派发代次，旧回调仍然失效。
+    }
+    playerController.danmaku.finishDanmakuLoad(disableDanmaku: true);
     _videoSourceService?.cancel();
 
     await playerController.stop();
@@ -546,10 +573,17 @@ abstract class _VideoPageController with Store implements Disposable {
     final danmakuSession = _danmakuSessions.begin();
     playerController.danmaku.beginDanmakuLoad();
     try {
+      final paramName = params.bangumiName?.trim() ?? '';
+      final fallbackTitles = <String>[
+        if (bangumiItem.nameCn.trim().isNotEmpty) bangumiItem.nameCn.trim(),
+        if (bangumiItem.name.trim().isNotEmpty) bangumiItem.name.trim(),
+        if (paramName.isNotEmpty) paramName,
+      ];
       final result = await playerController.danmaku.fetchDanmaku(
         params.bangumiId,
         params.pluginName,
         params.danmakuEpisodeNumber,
+        fallbackTitles: fallbackTitles,
       );
       if (session.isActive && danmakuSession.isActive) {
         if (result.hasDanmakus) {
@@ -602,16 +636,27 @@ abstract class _VideoPageController with Store implements Disposable {
       }
     });
 
+    final resolveStopwatch = Stopwatch()..start();
+    final identityKey = SourceHealthRepository.pluginIdentityKey(currentPlugin);
     try {
       final source = await _videoSourceService!.resolve(
         url,
         useLegacyParser: currentPlugin.useLegacyParser,
         offset: offset,
       );
+      resolveStopwatch.stop();
 
       if (session.isStale) {
         return;
       }
+      final cdnGroup = SourceHealthRepository.normalizeCdnGroup(source.url);
+      currentCdnGroup = cdnGroup;
+      SourceHealthRepository.instance.recordSuccess(
+        pluginIdentityKey: identityKey,
+        kind: MediaKind.anime,
+        ttfbMs: resolveStopwatch.elapsedMilliseconds,
+        cdnGroup: cdnGroup,
+      );
       _finishLoading();
       KazumiLogger()
           .i('VideoPageController: resolved video URL: ${source.url}');
@@ -655,19 +700,41 @@ abstract class _VideoPageController with Store implements Disposable {
         );
         unawaited(_loadPlaybackDanmaku(playerController, params, session));
       } else if (session.isActive) {
+        SourceHealthRepository.instance.recordFailure(
+          pluginIdentityKey: identityKey,
+          kind: MediaKind.anime,
+          failureKind: SourceFailureKind.decodeError,
+          cdnGroup: cdnGroup,
+          message: '播放器初始化失败',
+        );
         _playbackSessions.cancel();
       }
     } on VideoSourceTimeoutException {
+      resolveStopwatch.stop();
       if (session.isStale) {
         return;
       }
+      SourceHealthRepository.instance.recordFailure(
+        pluginIdentityKey: identityKey,
+        kind: MediaKind.anime,
+        failureKind: SourceFailureKind.networkTimeout,
+        message: '视频解析超时',
+      );
       _failLoading('视频解析超时，请重试');
     } on VideoSourceCancelledException {
+      resolveStopwatch.stop();
       KazumiLogger().i('VideoPageController: video URL resolution cancelled');
     } catch (e) {
+      resolveStopwatch.stop();
       if (session.isStale) {
         return;
       }
+      SourceHealthRepository.instance.recordFailure(
+        pluginIdentityKey: identityKey,
+        kind: MediaKind.anime,
+        failureKind: SourceFailureKind.decodeError,
+        message: e.toString(),
+      );
       _failLoading('视频解析失败：${e.toString()}');
     }
   }

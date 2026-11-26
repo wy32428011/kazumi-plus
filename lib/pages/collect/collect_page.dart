@@ -183,15 +183,16 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
   }
 
   Future<void> _changeSourceStatus(
-    SourceCollection entry,
+    FoldedSourceCollection folded,
     CollectType status,
   ) async {
+    final entry = folded.primary;
     final key = entry.media.ref.key;
     if (_pendingSourceIds.contains(key)) return;
     setState(() => _pendingSourceIds.add(key));
     try {
       if (status == CollectType.none) {
-        await _sourceLibrary.removeCollection(entry.media.ref);
+        await _sourceLibrary.removeCollectionCluster(folded.linkedRefs);
       } else {
         await _sourceLibrary.setCollection(entry.media, status: status.value);
       }
@@ -203,9 +204,10 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
   }
 
   Widget _mixedLibrary() {
-    // 跨频道按最近收藏时间排序，动漫记录仍调用原控制器修改和删除。
+    // 跨频道按最近收藏时间排序，影视按 plus_work_links_v1 无损折叠展示；动漫记录仍调用原控制器。
     final query = _query.trim().toLowerCase();
     final animeEntries = collectController.collectibles.toList();
+    final foldedSources = _sourceLibrary.foldedCollections(kind: _kind);
     final entries = <(DateTime, Object)>[
       if (_kind == null)
         for (final entry in animeEntries)
@@ -214,13 +216,12 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
                   .toLowerCase()
                   .contains(query)))
             (entry.time, entry),
-      for (final entry in _sourceLibrary.collections)
-        if ((_kind == null || entry.media.ref.kind == _kind) &&
-            (_status == null || entry.status == _status!.value) &&
-            ('${entry.media.title} ${entry.media.sourceName}'
+      for (final folded in foldedSources)
+        if ((_status == null || folded.primary.status == _status!.value) &&
+            ('${folded.primary.media.title} ${folded.primary.media.sourceName}'
                 .toLowerCase()
                 .contains(query)))
-          (entry.updatedAt, entry),
+          (folded.primary.updatedAt, folded),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
     return Column(
       children: [
@@ -268,15 +269,17 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
                   itemCount: entries.length,
                   itemBuilder: (context, index) {
                     final entry = entries[index].$2;
-                    if (entry is SourceCollection) {
+                    if (entry is FoldedSourceCollection) {
+                      final primary = entry.primary;
                       return SourceMediaTile(
-                        key: ValueKey(entry.media.ref.key),
-                        media: entry.media,
-                        subtitle: CollectType.fromValue(entry.status).label,
+                        key: ValueKey(primary.media.ref.key),
+                        media: primary.media,
+                        foldedSourceCount: entry.sourceCount,
+                        subtitle: CollectType.fromValue(primary.status).label,
                         trailing: PopupMenuButton<CollectType>(
                           tooltip: '修改片单状态',
                           enabled: !_pendingSourceIds.contains(
-                            entry.media.ref.key,
+                            primary.media.ref.key,
                           ),
                           onSelected: (status) =>
                               _changeSourceStatus(entry, status),

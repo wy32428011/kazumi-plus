@@ -434,8 +434,9 @@ class DownloadManager implements IDownloadManager {
 
       if (type == M3u8Type.master) {
         final master = M3u8Parser.parseMasterPlaylist(m3u8Content, m3u8Url);
-        final bestVariant = master.bestVariant;
-        mediaM3u8Url = bestVariant.uri;
+        final quality = GStorage.getSetting(SettingsKeys.downloadQuality);
+        final variant = master.selectVariant(quality);
+        mediaM3u8Url = variant.uri;
         mediaM3u8Content =
             await _fetchM3u8(mediaM3u8Url, httpHeaders, task.cancelToken);
       }

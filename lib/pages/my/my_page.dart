@@ -56,6 +56,7 @@ class _MyPageState extends State<MyPage> {
         MyDestination.theme => '/settings/theme',
         MyDestination.player => '/settings/player',
         MyDestination.danmaku => '/settings/danmaku/',
+        MyDestination.sourceHealth => '/settings/source-health',
         MyDestination.rules => '/settings/plugin/',
         MyDestination.history => '/settings/history/',
         MyDestination.downloads => '/settings/download/',
@@ -94,7 +95,11 @@ class _MyPageState extends State<MyPage> {
           builder: (context, _) => Observer(
             builder: (context) => MySpaceView(
               stats: widget.controller.watchStats,
-              sourceHistories: SourceMediaLibrary.instance.histories,
+              sourceHistories: [
+                for (final folded
+                    in SourceMediaLibrary.instance.foldedHistories())
+                  folded.primary,
+              ],
               onOpen: _open,
             ),
           ),

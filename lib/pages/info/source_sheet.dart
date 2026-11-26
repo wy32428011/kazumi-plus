@@ -13,6 +13,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
@@ -21,10 +22,14 @@ import 'package:kazumi/plugins/anti_crawler_config.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/media/media_text_normalizer.dart';
+import 'package:kazumi/services/media/source_health_repository.dart';
+import 'package:kazumi/services/media/source_scoring_engine.dart';
 import 'package:kazumi/services/plugin/captcha_verification_service.dart';
 import 'package:kazumi/services/plugin/plugin_search_service.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart'
     show RuleCancelToken;
+import 'package:kazumi/theme/kazumi_theme_tokens.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/television/tv_focus.dart';
@@ -122,6 +127,68 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
     if (mounted) KazumiDialog.showToast(message: '无法打开浏览器，请稍后重试');
   }
 
+  List<AnimeSourceCandidate> _collectAlternateSources(
+    Plugin selectedPlugin,
+    SearchItem selectedItem,
+  ) {
+    final targetNorm = MediaTextNormalizer.normalizeTitleForMatching(
+      selectedItem.name.isNotEmpty ? selectedItem.name : _keyword,
+    );
+    final selectedIdentity = SourceHealthRepository.pluginIdentityKey(
+      selectedPlugin,
+    );
+    final seenPluginIds = <String>{selectedIdentity};
+    final alternates = <AnimeSourceCandidate>[];
+
+    for (final response in widget.infoController.pluginSearchResponseList) {
+      if (response.data.isEmpty) continue;
+      final plugin = _pluginsController.pluginList
+          .where(
+            (p) =>
+                p.name == response.pluginName &&
+                p.enabled &&
+                p.supportedMediaTypes.contains('anime'),
+          )
+          .firstOrNull;
+      if (plugin == null) continue;
+      final identity = SourceHealthRepository.pluginIdentityKey(plugin);
+      if (!seenPluginIds.add(identity)) continue;
+
+      SearchItem best = response.data.first;
+      for (final item in response.data) {
+        final norm = MediaTextNormalizer.normalizeTitleForMatching(item.name);
+        if (norm == targetNorm) {
+          best = item;
+          break;
+        }
+        if (targetNorm.isNotEmpty &&
+            (norm.contains(targetNorm) || targetNorm.contains(norm))) {
+          best = item;
+        }
+      }
+      alternates.add(
+        AnimeSourceCandidate(
+          plugin: plugin,
+          title: best.name,
+          src: best.src,
+        ),
+      );
+    }
+
+    alternates.sort((a, b) {
+      final scoreB = SourceScoringEngine.instance.scorePlugin(
+        b.plugin,
+        MediaKind.anime,
+      );
+      final scoreA = SourceScoringEngine.instance.scorePlugin(
+        a.plugin,
+        MediaKind.anime,
+      );
+      return scoreB.compareTo(scoreA);
+    });
+    return alternates;
+  }
+
   Future<void> _openSearchItem(String name, SearchItem searchItem) async {
     if (dialogs.isRunning) return;
     final plugin = _pluginFor(name);
@@ -138,6 +205,7 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
           ),
         );
         if (roads.isEmpty) throw ChapterErrorException(plugin.name);
+        final alternates = _collectAlternateSources(plugin, searchItem);
         task.withContext(
           (context) => context.pushNamed(
             '/video/',
@@ -147,6 +215,7 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
               title: searchItem.name,
               src: searchItem.src,
               roads: roads,
+              alternateSources: alternates,
             ),
           ),
         );
@@ -187,45 +256,74 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
   );
 
   @override
-  Widget build(BuildContext context) => Observer(
-    builder: (context) {
-      // Snapshot observable values here; lazy list builders are not tracked.
-      final groupsByName = {
-        for (final plugin in _pluginsController.pluginList)
-          plugin.name: _SourceSearchGroup(
-            name: plugin.name,
-            keyword: _keywordFor(plugin.name),
-            status:
-                widget.infoController.pluginSearchStatus[plugin.name] ??
-                PluginSearchStatus.pending,
-            results: <SearchItem>[],
-          ),
-      };
-      final seenBySource = <String, Set<String>>{};
-      String? firstResultSource;
-      // Responses follow completion order; groups keep configured order.
-      for (final response in widget.infoController.pluginSearchResponseList) {
-        final group = groupsByName[response.pluginName];
-        if (group == null) continue;
-        final seen = seenBySource.putIfAbsent(group.name, () => <String>{});
-        for (final result in response.data) {
-          if (seen.add(result.src)) group.results.add(result);
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: SourceHealthRepository.instance,
+    builder: (context, _) => Observer(
+      builder: (context) {
+        // 仅展示已启用且支持动漫的规则，并按跨频道共享实测健康评分降序排列。
+        final healthRepo = SourceHealthRepository.instance;
+        final scoring = SourceScoringEngine.instance;
+        final animePlugins = _pluginsController.pluginList
+            .where((p) => p.enabled && p.supportedMediaTypes.contains('anime'))
+            .toList()
+          ..sort((a, b) {
+            final scoreB = scoring.scorePlugin(b, MediaKind.anime);
+            final scoreA = scoring.scorePlugin(a, MediaKind.anime);
+            return scoreB.compareTo(scoreA);
+          });
+
+        final now = DateTime.now();
+        final groupsByName = {
+          for (final plugin in animePlugins)
+            plugin.name: () {
+              final identityKey = SourceHealthRepository.pluginIdentityKey(
+                plugin,
+              );
+              final health = healthRepo.bestAvailableHealthFor(
+                identityKey,
+                MediaKind.anime,
+              );
+              return _SourceSearchGroup(
+                name: plugin.name,
+                keyword: _keywordFor(plugin.name),
+                status:
+                    widget.infoController.pluginSearchStatus[plugin.name] ??
+                    PluginSearchStatus.pending,
+                results: <SearchItem>[],
+                verifiedBadge:
+                    health?.lastVerifiedProfile?.isUiVerified == true
+                    ? health!.lastVerifiedProfile!.uiBadgeText
+                    : '',
+                ttfbMs: health?.ewmaTtfbMs?.round(),
+                isCircuitOpen: health != null && health.isCircuitOpen(now),
+              );
+            }(),
+        };
+        final seenBySource = <String, Set<String>>{};
+        String? firstResultSource;
+        for (final response in widget.infoController.pluginSearchResponseList) {
+          final group = groupsByName[response.pluginName];
+          if (group == null) continue;
+          final seen = seenBySource.putIfAbsent(group.name, () => <String>{});
+          for (final result in response.data) {
+            if (seen.add(result.src)) group.results.add(result);
+          }
+          if (group.hasResults) firstResultSource ??= group.name;
         }
-        if (group.hasResults) firstResultSource ??= group.name;
-      }
-      return _SourceSheetView(
-        keyword: _keyword,
-        groups: groupsByName.values.toList(),
-        firstResultSource: firstResultSource,
-        onSourceSearch: _showCustomKeyword,
-        onSourceAliasSearch: _showAliasPicker,
-        onRetry: _retry,
-        onVerify: (name) =>
-            _captchaFlow.start(_pluginFor(name), _keywordFor(name)),
-        onOpenBrowser: _openInBrowser,
-        onPlay: _openSearchItem,
-        onClose: () => Navigator.of(context).pop(),
-      );
-    },
+        return _SourceSheetView(
+          keyword: _keyword,
+          groups: groupsByName.values.toList(),
+          firstResultSource: firstResultSource,
+          onSourceSearch: _showCustomKeyword,
+          onSourceAliasSearch: _showAliasPicker,
+          onRetry: _retry,
+          onVerify: (name) =>
+              _captchaFlow.start(_pluginFor(name), _keywordFor(name)),
+          onOpenBrowser: _openInBrowser,
+          onPlay: _openSearchItem,
+          onClose: () => Navigator.of(context).pop(),
+        );
+      },
+    ),
   );
 }

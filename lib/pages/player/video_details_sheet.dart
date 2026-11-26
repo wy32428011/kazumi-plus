@@ -9,11 +9,11 @@ import 'package:kazumi/bean/widget/connected_tabs.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/tonal_card.dart';
-import 'package:kazumi/pages/player/player_controller.dart';
+import 'package:kazumi/pages/player/player_controls_controller.dart';
 
 void showVideoDetailsSheet(
   BuildContext context, {
-  required PlayerController playerController,
+  required PlayerControlsController playerController,
 }) {
   showAdaptiveBottomSheet<void>(
     context: context,
@@ -61,7 +61,7 @@ class _LogEntry {
 class _VideoDetailsSheet extends StatefulWidget {
   const _VideoDetailsSheet({required this.playerController});
 
-  final PlayerController playerController;
+  final PlayerControlsController playerController;
 
   @override
   State<_VideoDetailsSheet> createState() => _VideoDetailsSheetState();
@@ -75,7 +75,7 @@ class _VideoDetailsSheetState extends State<_VideoDetailsSheet>
   bool _logInitialScrollDone = false;
   int _lastLogCount = 0;
 
-  PlayerController get playerController => widget.playerController;
+  PlayerControlsController get playerController => widget.playerController;
 
   @override
   void dispose() {

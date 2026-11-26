@@ -13,7 +13,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/exit_confirmation_dialog.dart';
 import 'package:kazumi/bean/settings/theme_provider.dart';
 import 'package:kazumi/navigation.dart';
-import 'package:kazumi/utils/constants.dart';
+import 'package:kazumi/theme/kazumi_theme_tokens.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/theme.dart';
 import 'package:kazumi/television/tv_focus.dart';
@@ -128,10 +128,10 @@ class _AppWidgetState extends State<AppWidget>
     };
   }
 
-  Color _storedThemeColor() {
+  Color? _storedThemeColor() {
     final defaultThemeColor = GStorage.getSetting(SettingsKeys.themeColor);
     if (defaultThemeColor == 'default') {
-      return Colors.green;
+      return null;
     }
     return Color(int.parse(defaultThemeColor, radix: 16));
   }
@@ -141,16 +141,14 @@ class _AppWidgetState extends State<AppWidget>
     required String? fontFamily,
     Color? color,
     ColorScheme? colorScheme,
+    bool oledEnhance = false,
   }) {
-    return ThemeData(
-      useMaterial3: true,
-      fontFamily: fontFamily,
+    return buildSilverSaltTheme(
       brightness: brightness,
-      colorSchemeSeed: color,
-      colorScheme: colorScheme,
-      progressIndicatorTheme: progressIndicatorTheme2024,
-      sliderTheme: sliderTheme2024,
-      pageTransitionsTheme: pageTransitionsTheme2024,
+      fontFamily: fontFamily,
+      customAccent: color,
+      dynamicScheme: colorScheme,
+      oledEnhance: oledEnhance,
     );
   }
 

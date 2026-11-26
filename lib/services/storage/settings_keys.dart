@@ -485,6 +485,12 @@ class SettingsKeys {
     true,
     group: SettingGroup.download,
   );
+  // 'auto' 表示最高清晰度；'lowest' 表示最低码率；数字为最大高度（如 '720'）。
+  static const downloadQuality = SettingKey<String>(
+    _SettingBoxKey.downloadQuality,
+    'auto',
+    group: SettingGroup.download,
+  );
   static const downloadDirectory = SettingKey<String>(
     _SettingBoxKey.downloadDirectory,
     '',
@@ -526,6 +532,21 @@ class SettingsKeys {
     _SettingBoxKey.brightnessVolumeGesture,
     true,
     group: SettingGroup.player,
+  );
+  static const autoFailoverEnabled = SettingKey<bool>(
+    'autoFailoverEnabled',
+    true,
+    group: SettingGroup.player,
+  );
+  static const sourceRecommendationStrategy = SettingKey<String>(
+    'sourceRecommendationStrategy',
+    'balanced',
+    group: SettingGroup.player,
+  );
+  static const mediaBrowseMode = SettingKey<String>(
+    'mediaBrowseMode',
+    'auto',
+    group: SettingGroup.interface,
   );
   static const historySyncDeviceId = SettingKey<String>(
     _SettingBoxKey.historySyncDeviceId,
@@ -647,6 +668,7 @@ class SettingsKeys {
     downloadParallelEpisodes,
     downloadParallelSegments,
     downloadDanmaku,
+    downloadQuality,
     downloadDirectory,
     downloadDirectoryBookmark,
     shortcutDialogShown,
@@ -755,6 +777,7 @@ class _SettingBoxKey {
       downloadParallelEpisodes = 'downloadParallelEpisodes',
       downloadParallelSegments = 'downloadParallelSegments',
       downloadDanmaku = 'downloadDanmaku',
+      downloadQuality = 'downloadQuality',
       downloadDirectory = 'downloadDirectory',
       shortcutDialogShown = 'shortcutDialogShown',
       bangumiSyncEnable = 'bangumiSyncEnable',

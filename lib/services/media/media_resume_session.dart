@@ -21,11 +21,25 @@ class MediaResumeSession {
     _cancelled.future.then<T>((_) => throw StateError('观看进度恢复已取消')),
   ]);
 
+  /// 跨源切源时将目标时间戳钳位至 `[0, max(0, newDuration - 15s)]`，防止片头差异触发误完播。
+  static Duration clampCrossSourceTarget(
+    Duration target,
+    Duration newDuration, {
+    Duration tailGuard = const Duration(seconds: 15),
+  }) {
+    if (target <= Duration.zero) return Duration.zero;
+    if (newDuration <= Duration.zero) return target;
+    final maxAllowed = newDuration - tailGuard;
+    if (maxAllowed <= Duration.zero) return Duration.zero;
+    return target > maxAllowed ? maxAllowed : target;
+  }
+
   Future<void> restore({
     required Player player,
     required VideoController video,
     required Duration position,
     required bool Function() isCurrent,
+    Duration tolerance = const Duration(seconds: 3),
   }) async {
     void checkCurrent() {
       if (isCancelled || !isCurrent()) throw StateError('观看进度恢复已取消');
@@ -38,17 +52,23 @@ class MediaResumeSession {
 
     Future<void> seekAndConfirm() async {
       checkCurrent();
+      final effectivePosition = clampCrossSourceTarget(
+        position,
+        player.state.duration,
+      );
+      final toleranceMs = tolerance.inMilliseconds;
       final landed = Completer<void>();
       final subscription = player.stream.position.listen((actual) {
         if (!landed.isCompleted &&
-            (actual.inMilliseconds - position.inMilliseconds).abs() <= 3000) {
+            (actual.inMilliseconds - effectivePosition.inMilliseconds).abs() <=
+                toleranceMs) {
           landed.complete();
         }
       });
       try {
         // 先监听后定位，命令提交成功不等于原生位置已更新。
         await _awaitActive(
-          player.seek(position).timeout(const Duration(seconds: 30)),
+          player.seek(effectivePosition).timeout(const Duration(seconds: 30)),
         );
         await _awaitActive(landed.future.timeout(const Duration(seconds: 30)));
         checkCurrent();

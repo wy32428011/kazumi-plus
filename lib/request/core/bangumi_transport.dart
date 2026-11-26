@@ -5,36 +5,140 @@ import 'package:dio/dio.dart';
 import 'package:ech_http/ech_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:kazumi/request/config/api_endpoints.dart';
+import 'package:kazumi/request/core/dio_factory.dart';
 import 'package:kazumi/request/core/network_config.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/bangumi_acceleration.dart';
 import 'package:kazumi/services/network/bangumi_ech_resolver.dart';
+import 'package:kazumi/utils/bangumi_mirror_credentials.dart';
 
 const _echRequestKey = 'bangumiEch';
+const _originalUriKey = '_bangumiOriginalUri';
+const _retryTierKey = '_bangumiRetryTier';
+
+bool isProtectedBangumiMirrorPath(Uri uri, String method) {
+  final path = uri.path;
+  if (method.toUpperCase() == 'POST' && path == '/v0/search/subjects') {
+    return true;
+  }
+  if (method.toUpperCase() == 'GET') {
+    return (path.startsWith('/p1/subjects/') && path.endsWith('/comments')) ||
+        (path.startsWith('/p1/episodes/') && path.endsWith('/comments')) ||
+        (path.startsWith('/p1/characters/') && path.endsWith('/comments'));
+  }
+  return false;
+}
 
 class BangumiAccelerationInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra.remove(_echRequestKey);
+    final retryTier = options.extra[_retryTierKey] as int? ?? 0;
+    if (retryTier > 0) {
+      handler.next(options);
+      return;
+    }
+
     final uri = options.uri;
     if (ApiEndpoints.bangumiPublicApiHosts.contains(uri.host)) {
+      options.extra[_originalUriKey] = uri;
       switch (BangumiAcceleration.current) {
         case BangumiAcceleration.direct:
+          options.extra[_retryTierKey] = 2;
           break;
         case BangumiAcceleration.ech:
           options.path = uri.replace(scheme: 'https').toString();
           options.queryParameters = {};
           options.extra[_echRequestKey] = true;
+          options.extra[_retryTierKey] = 1;
         case BangumiAcceleration.mirror:
-          options.path =
-              ApiEndpoints.bangumiMirrorDomain +
-              uri.path +
-              (uri.hasQuery ? '?${uri.query}' : '');
-          options.queryParameters = {};
-          KazumiLogger().d('Bangumi mirror: ${options.path}');
+          if (isProtectedBangumiMirrorPath(uri, options.method) &&
+              !hasBangumiMirrorCredentials) {
+            // 镜像受保护端点（搜索/评论等）需要 HMAC 签名。未注入凭据时直接走 ECH，避免 401 报错。
+            options.path = uri.replace(scheme: 'https').toString();
+            options.queryParameters = {};
+            options.extra[_echRequestKey] = true;
+            options.extra[_retryTierKey] = 1;
+            KazumiLogger().d(
+              'Bangumi mirror: credentials missing for ${uri.path}, using ECH instead',
+            );
+          } else {
+            options.extra[_retryTierKey] = 0;
+            options.path =
+                ApiEndpoints.bangumiMirrorDomain +
+                uri.path +
+                (uri.hasQuery ? '?${uri.query}' : '');
+            options.queryParameters = {};
+            KazumiLogger().d('Bangumi mirror: ${options.path}');
+          }
       }
     }
     handler.next(options);
+  }
+
+  @override
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    if (err.type == DioExceptionType.cancel) {
+      handler.next(err);
+      return;
+    }
+
+    final options = err.requestOptions;
+    final retryTier = options.extra[_retryTierKey] as int? ?? 0;
+    final originalUri = options.extra[_originalUriKey] as Uri?;
+
+    if (originalUri != null &&
+        ApiEndpoints.bangumiPublicApiHosts.contains(originalUri.host) &&
+        retryTier < 2) {
+      // 清理可能附带的镜像专有凭据头
+      options.headers.remove('X-AppId');
+      options.headers.remove('X-Timestamp');
+      options.headers.remove('X-Signature');
+
+      if (retryTier == 0) {
+        // 第一层回退：从镜像回退至 ECH 加速
+        options.extra[_retryTierKey] = 1;
+        options.extra[_echRequestKey] = true;
+        options.path = originalUri.replace(scheme: 'https').toString();
+        options.queryParameters = {};
+        KazumiLogger().w(
+          'Bangumi mirror request failed (${err.response?.statusCode ?? err.type}), falling back to ECH: ${options.path}',
+          error: err,
+        );
+        try {
+          final response = await DioFactory.bangumiDio.fetch(options);
+          return handler.resolve(response);
+        } on DioException catch (echError) {
+          err = echError;
+        } catch (e) {
+          KazumiLogger().w(
+            'Bangumi ECH fallback attempt threw non-DioException',
+            error: e,
+          );
+        }
+      }
+
+      // 第二层回退：从 ECH 回退至直连 (Direct)
+      options.extra[_retryTierKey] = 2;
+      options.extra.remove(_echRequestKey);
+      options.path = originalUri.replace(scheme: 'https').toString();
+      options.queryParameters = {};
+      KazumiLogger().w(
+        'Bangumi ECH fallback failed, falling back to Direct: ${options.path}',
+      );
+      try {
+        final response = await DioFactory.bangumiDio.fetch(options);
+        return handler.resolve(response);
+      } catch (directError) {
+        if (directError is DioException) {
+          return handler.next(directError);
+        }
+      }
+    }
+    handler.next(err);
   }
 }
 

@@ -1,0 +1,1455 @@
+{
+  "schema_version": 1,
+  "status": "implemented_packaged_and_limited_runtime_verified",
+  "recorded_at": "2026-10-14T00:28:27.6194045+08:00",
+  "final_batch": "20261013-235146-363-7a81c1ef-6ab7eaba",
+  "source_commit": "7a81c1ef619859e460f725b6225749d0660630db",
+  "source_dirty": true,
+  "source_manifest_sha256": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+  "artifacts": [
+    {
+      "target": "WindowsRelease",
+      "file": "Kazumi-Plus-0.1.0-windows-x64.zip",
+      "bytes": 40581219,
+      "sha256": "6e3d50a02887d40c72532b7290e1145bee4abc3b940e1550d4685c254269c19d",
+      "zip_verified_files": 66,
+      "signing_certificate_sha256": null,
+      "evidence_directory": "evidence/WindowsRelease"
+    },
+    {
+      "target": "AndroidRelease",
+      "file": "Kazumi-Plus-0.1.0-android-arm64.apk",
+      "bytes": 30574589,
+      "sha256": "0c98be084efacd0e9d5cfa53fe5ece5ecb59dd3028d1cb60b339783b762250eb",
+      "zip_verified_files": null,
+      "signing_certificate_sha256": "53e74ad1cff993e70a3020b5d9cf34b492f9bb376602f6162a3e799f09148f19",
+      "evidence_directory": "evidence/AndroidRelease"
+    },
+    {
+      "target": "AndroidTvRelease",
+      "file": "Kazumi-Plus-0.1.0-android-tv-arm.apk",
+      "bytes": 50714078,
+      "sha256": "06acfb0c14521bf71c184b7802b679f6673e7769829bab2c80695fd62e452983",
+      "zip_verified_files": null,
+      "signing_certificate_sha256": "c3d03c8ce70e88ab53175b1a528d6a9b09cd2a8d6c65bdbbc38ebe15eef1f9e7",
+      "evidence_directory": "evidence/AndroidTvRelease"
+    }
+  ],
+  "build_manifest_device_accepted_remains_false": true,
+  "artifact_readback": {
+    "schema_version": 1,
+    "status": "passed_artifact_readback",
+    "verified_at": "2026-10-14T00:00:39.798127+08:00",
+    "timezone": "Asia/Taipei",
+    "batch_directory": "F:\\kazumi-plus\\dist\\packages\\20261013-235146-363-7a81c1ef-6ab7eaba",
+    "source_commit": "7a81c1ef619859e460f725b6225749d0660630db",
+    "source_dirty": true,
+    "source_manifest_sha256": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+    "source_manifest_entry_count": 748,
+    "all_targets_same_source": true,
+    "checksums": [
+      {
+        "file": "Kazumi-Plus-0.1.0-windows-x64.zip",
+        "sha256": "6e3d50a02887d40c72532b7290e1145bee4abc3b940e1550d4685c254269c19d",
+        "matches": true
+      },
+      {
+        "file": "Kazumi-Plus-0.1.0-android-arm64.apk",
+        "sha256": "0c98be084efacd0e9d5cfa53fe5ece5ecb59dd3028d1cb60b339783b762250eb",
+        "matches": true
+      },
+      {
+        "file": "Kazumi-Plus-0.1.0-android-tv-arm.apk",
+        "sha256": "06acfb0c14521bf71c184b7802b679f6673e7769829bab2c80695fd62e452983",
+        "matches": true
+      },
+      {
+        "file": "build-manifest.json",
+        "sha256": "e3386fefa42a29a2847b356e6d99dc8902cab6d2f04b4cd8f6c8b437e75443f0",
+        "matches": true
+      },
+      {
+        "file": "source-manifest.json",
+        "sha256": "e1bcad1c40fae4d99428a12c075caba71b0d91d6d8aaa3779294890e519c066c",
+        "matches": true
+      }
+    ],
+    "artifacts": [
+      {
+        "target": "WindowsRelease",
+        "file": "Kazumi-Plus-0.1.0-windows-x64.zip",
+        "bytes": 40581219,
+        "sha256": "6e3d50a02887d40c72532b7290e1145bee4abc3b940e1550d4685c254269c19d",
+        "source_manifest_sha256": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+        "archive_verified_files": 66,
+        "files": [
+          {
+            "file": "audio_service_win_plugin.dll",
+            "bytes": 139776,
+            "sha256": "29832fef0fa1f494f5e5e89caa5515302f1b47019d5928e83e7ba67343884497"
+          },
+          {
+            "file": "connectivity_plus_plugin.dll",
+            "bytes": 99840,
+            "sha256": "23b9e0a0d665a2e162faeabc705247997d6256daf65d8555b0b7023c17cad435"
+          },
+          {
+            "file": "dartjni.dll",
+            "bytes": 66560,
+            "sha256": "fa5110a91fc7e1b1fa6232d38c198dcb59cfbe9b473b9b28b5dadd858e70aabf"
+          },
+          {
+            "file": "dynamic_color_plugin.dll",
+            "bytes": 82944,
+            "sha256": "c7a6b894c3e098891e98a03aeb09bd83944d0d8fd1f0d89a105b0667a02a019e"
+          },
+          {
+            "file": "ech_http.dll",
+            "bytes": 2106880,
+            "sha256": "caf275c51b840e25f91665c65d33404110e2fcee6811a7fdd4dd6c2a8da2e808"
+          },
+          {
+            "file": "file_selector_windows_plugin.dll",
+            "bytes": 111616,
+            "sha256": "921f8675aa72e7d02c54bd14e4fae4a4e6f41b3a6bb69f8cd8e47671a3579510"
+          },
+          {
+            "file": "flutter_volume_controller_plugin.dll",
+            "bytes": 109056,
+            "sha256": "e772e550dd1a9954394fa574b2bb6a07de63d6e4ef5387d827a4a1fe48027a68"
+          },
+          {
+            "file": "flutter_windows.dll",
+            "bytes": 21274112,
+            "sha256": "7b03815958c49d72385be497fbd0eb1bb2ae27d24989d6c9aee83eafbd93e9d3"
+          },
+          {
+            "file": "kazumi_plus.exe",
+            "bytes": 135168,
+            "sha256": "a0c728d88624997a630bca5eaa047689c7bde20fe239d0a52648013e6f212b84"
+          },
+          {
+            "file": "libmpv-2.dll",
+            "bytes": 38723584,
+            "sha256": "361e3a306707454a24e7d3558b2eb7a9ccc23a4f5ed396fe7e77f0a44908eda5"
+          },
+          {
+            "file": "media_kit_event_loop.dll",
+            "bytes": 104448,
+            "sha256": "0c5031833c5a90447f9c9c2f52eee89502c3d353363788696c8230dec2846942"
+          },
+          {
+            "file": "media_kit_video_plugin.dll",
+            "bytes": 159744,
+            "sha256": "b7f2fa4574b7f2155e531f1daba960126e552ffc91f079bdeff2d86a444dc905"
+          },
+          {
+            "file": "screen_retriever_windows_plugin.dll",
+            "bytes": 119808,
+            "sha256": "632b7e31e38af52566e213f9bc39f4323a7a8976d6196ee0a3d8cac3bbc8c694"
+          },
+          {
+            "file": "tray_manager_plugin.dll",
+            "bytes": 107520,
+            "sha256": "4c3e890a53742c6f963b0e9c74c52ef96bbab8e1516c2b9fba7c66e8853ea29a"
+          },
+          {
+            "file": "url_launcher_windows_plugin.dll",
+            "bytes": 98304,
+            "sha256": "ae57aaadcd62ddab08c43cf85bddfbe918fa4569af40d5cb00f6d0feefcd1eb2"
+          },
+          {
+            "file": "webview_windows_plugin.dll",
+            "bytes": 562176,
+            "sha256": "64f7b2aa2a1eb772a72996b1a167dae52ff7c7e851bcc63a5cbca30338c14487"
+          },
+          {
+            "file": "WebView2Loader.dll",
+            "bytes": 142264,
+            "sha256": "f0fccd520afd3056df3130b6ccd3386fef029fe8a5637f190b1da57c96330e85"
+          },
+          {
+            "file": "window_manager_plugin.dll",
+            "bytes": 130048,
+            "sha256": "a3b5425fc086392ce1ce9c015b64c2be1a9a85f97ccb1535a1594a80c9cda566"
+          },
+          {
+            "file": "data/app.so",
+            "bytes": 16843656,
+            "sha256": "178dd3447c40dcbbe2ec56d6ee30f967c390b8ba06671ac9306bb7a69c0fd032"
+          },
+          {
+            "file": "data/icudtl.dat",
+            "bytes": 864880,
+            "sha256": "325a86063d26334c2eabe1743cea073b612540fbf3d8fc2ef0b5708e3763a8c7"
+          },
+          {
+            "file": "data/flutter_assets/AssetManifest.bin",
+            "bytes": 3170,
+            "sha256": "84cd66d4b1b4aeebf1bf70e20f6d9e8a3ba8c71771a002d515a0629284df9c21"
+          },
+          {
+            "file": "data/flutter_assets/FontManifest.json",
+            "bytes": 291,
+            "sha256": "839b4997b61103c0807d097715169f3c2d88d0463a3f67a8e54c310426bbeada"
+          },
+          {
+            "file": "data/flutter_assets/NativeAssetsManifest.json",
+            "bytes": 295,
+            "sha256": "0995d37e5f6159e1d25e7c21d547620e49a931e2327b1a53385c75d98e77d416"
+          },
+          {
+            "file": "data/flutter_assets/NOTICES.Z",
+            "bytes": 149313,
+            "sha256": "0b16d6b993beda8f82f1d8fb3d82993ae1d0e23d6fbf4fc11da423a636143b7d"
+          },
+          {
+            "file": "data/flutter_assets/assets/fonts/MiSans-Regular.ttf",
+            "bytes": 8122324,
+            "sha256": "9c120f0a849bc0aa5048daae2a3c0f6eecd828b5b33fce682a9622833f5feea6"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/danmaku_off.svg",
+            "bytes": 1823,
+            "sha256": "b3353290846198cd41a2e3308386d98165348ce0d0581b18d1ab32553eeb7d77"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/danmaku_setting.svg",
+            "bytes": 2279,
+            "sha256": "b6f5b666c6ae6ab254250023316213d4d2df5b88b707652a6c3c933fa196367d"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/forward_80.png",
+            "bytes": 4719,
+            "sha256": "a31408fb148043f11b186b4a6d96b4bcb4c3a238facb9ac9af65c8176867b726"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/loading.png",
+            "bytes": 3028,
+            "sha256": "38907a7e7c5ca4e9411c2a6c62447dd215fd131e093839625fb8386c90de2934"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/noface.jpeg",
+            "bytes": 3719,
+            "sha256": "824be2d5b27ae6c2b8c2b4b63545a187e38ce6cab33bdb56d65b2d04485c03bb"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/logo_android.png",
+            "bytes": 7237,
+            "sha256": "d752270a500880c666847c8468af49c4bce56b8a28445c6789974a2427cb3cc0"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/logo_ios.png",
+            "bytes": 7237,
+            "sha256": "d752270a500880c666847c8468af49c4bce56b8a28445c6789974a2427cb3cc0"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/logo_lanczos.ico",
+            "bytes": 7510,
+            "sha256": "702d39e566c646d960dd40481809aa45be8f393b2c26c95fd8a53b752c22f2a1"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/logo_linux.png",
+            "bytes": 7237,
+            "sha256": "d752270a500880c666847c8468af49c4bce56b8a28445c6789974a2427cb3cc0"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/logo_rounded.png",
+            "bytes": 7237,
+            "sha256": "d752270a500880c666847c8468af49c4bce56b8a28445c6789974a2427cb3cc0"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/logo_windows.ico",
+            "bytes": 7510,
+            "sha256": "702d39e566c646d960dd40481809aa45be8f393b2c26c95fd8a53b752c22f2a1"
+          },
+          {
+            "file": "data/flutter_assets/assets/images/logo/plus_mark.svg",
+            "bytes": 372,
+            "sha256": "d1790179c519f9ee10cc643a5dde3f0c91548bcb7897202fe74341f6c15f541a"
+          },
+          {
+            "file": "data/flutter_assets/assets/plugins/7sefun.json",
+            "bytes": 524,
+            "sha256": "5ea9c8aedda64fcfd4db18775bc060eea923d22d4bc2c29018e35dfc92f64a6f"
+          },
+          {
+            "file": "data/flutter_assets/assets/plugins/baofeng.json",
+            "bytes": 6906,
+            "sha256": "b6b7698218d64df5cc7b9b7049e39ef5fca2616b0b4358426b296ba44c251e04"
+          },
+          {
+            "file": "data/flutter_assets/assets/plugins/DM84.json",
+            "bytes": 485,
+            "sha256": "4fed81571de82cc91fe23ce0034da9641cc64e91e2e8c432ddb2444f3419813c"
+          },
+          {
+            "file": "data/flutter_assets/assets/plugins/guangsu.json",
+            "bytes": 7358,
+            "sha256": "27b9baf65bc1d714cf46d3add5d41b3147589932cf7ba91ec5a4979696c1896b"
+          },
+          {
+            "file": "data/flutter_assets/assets/plugins/modu.json",
+            "bytes": 7358,
+            "sha256": "5ff4993116a567d2c8f97bd2e80331a38582c46ddc78f4ccc5be205b3dc9f06a"
+          },
+          {
+            "file": "data/flutter_assets/assets/plugins/subo.json",
+            "bytes": 7260,
+            "sha256": "42f437626a0e19641f8b4d36e6cdcb38b18a6ca67de1cbe881d24b32d7ed2987"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_AutoDownscalePre_x2.glsl",
+            "bytes": 1596,
+            "sha256": "9141668ced0b26512253e6396e805820716f35b57c92950d9da489f8b96a7ba4"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_AutoDownscalePre_x4.glsl",
+            "bytes": 1604,
+            "sha256": "dadb7b713cfa1d810c55b5deff616072f3390e546fed1e6a54f80ea555f7b95d"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Clamp_Highlights.glsl",
+            "bytes": 2884,
+            "sha256": "8c5fb67c76bed3021f8a27b050c3b97a6ac1b284f9ce91c04189015c354c0217"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Restore_CNN_M.glsl",
+            "bytes": 36191,
+            "sha256": "dd515c307d97d8e5c809f263dd94174cc5667b8c1299082cdff14e6ddfc8d4bc"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Restore_CNN_S.glsl",
+            "bytes": 17273,
+            "sha256": "fca48f8322be4c7c5b14393a6eb6d733bbefffea0ca29694cb6c4b0335dad5ce"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Restore_CNN_VL.glsl",
+            "bytes": 144948,
+            "sha256": "da18324507c31947943a4401ddcaea669a027705c5d8f4675aeca8a671c2eea7"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Upscale_CNN_x2_M.glsl",
+            "bytes": 37985,
+            "sha256": "249dc3be467f556ed3361deea79f42bac1ae57456c22588c2cc3c2ee8808909c"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Upscale_CNN_x2_S.glsl",
+            "bytes": 18796,
+            "sha256": "90b65a4f36950852a34e5f12beb179fafed59fa8d911887e0f5f184337998edf"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/Anime4K_Upscale_CNN_x2_VL.glsl",
+            "bytes": 147712,
+            "sha256": "ff9028a58aac9ad470ecbe379c1accf72443b348fa59eac7af1f091e333c733e"
+          },
+          {
+            "file": "data/flutter_assets/assets/shaders/LICENSE",
+            "bytes": 1082,
+            "sha256": "308dab0978e0ea573a10e50c37c45b9486e033de3366d31ea96354156be192b9"
+          },
+          {
+            "file": "data/flutter_assets/assets/statements/statements.txt",
+            "bytes": 1771,
+            "sha256": "e8f37dc5e553f7df07351fe12717aae2ab2847d045c95270496ec8f98b6a8553"
+          },
+          {
+            "file": "data/flutter_assets/fonts/MaterialIcons-Regular.otf",
+            "bytes": 41816,
+            "sha256": "12888d1afed38d5d7041805118ca8bfa1f560a9b782031305a437de01138b8f3"
+          },
+          {
+            "file": "data/flutter_assets/licenses/ech_http/BORINGSSL_LICENSE",
+            "bytes": 13353,
+            "sha256": "86f839d5fd287d9b155ef222ba39ccda32e5515b4573a9a1f35b5db03ff7e0a3"
+          },
+          {
+            "file": "data/flutter_assets/licenses/ech_http/CA_BUNDLE_LICENSE",
+            "bytes": 17099,
+            "sha256": "9221c2f936159b8446d329249fb4c0f25be510f447383a0f13336ac7985668a3"
+          },
+          {
+            "file": "data/flutter_assets/licenses/ech_http/cacert.pem",
+            "bytes": 191850,
+            "sha256": "303daa9461b9617eb8e6209b272613fcf2923959ff32e9422eaaae195c55c780"
+          },
+          {
+            "file": "data/flutter_assets/licenses/ech_http/CURL_LICENSE",
+            "bytes": 1110,
+            "sha256": "2eb469aebc37f20dda0960d9a5b03bfb8c0bb8a9d3fa5be0a356aa02fd0a8673"
+          },
+          {
+            "file": "data/flutter_assets/licenses/ech_http/LIBCXX_LICENSE",
+            "bytes": 17014,
+            "sha256": "a7de191338d328257ecec5ba1ea971ebd67633d0b4fce7d6272a39749547ec6b"
+          },
+          {
+            "file": "data/flutter_assets/licenses/ech_http/THIRD_PARTY_NOTICES.md",
+            "bytes": 2641,
+            "sha256": "516d706b0acc6b02eb6a43aaa2e7ded36efae89d20b9024b631df1053e71a80b"
+          },
+          {
+            "file": "data/flutter_assets/packages/cupertino_icons/assets/CupertinoIcons.ttf",
+            "bytes": 257628,
+            "sha256": "67c44fe9183b002e79dde7f6977e2988661c9a3e4a3c5fce968787efdbed823c"
+          },
+          {
+            "file": "data/flutter_assets/packages/wakelock_plus/assets/no_sleep.js",
+            "bytes": 13344,
+            "sha256": "dce4eef0b197b640ad6aaab2228ee1ee7dccf8bd6d6b5de5484dd1bd16430a78"
+          },
+          {
+            "file": "data/flutter_assets/shaders/ink_sparkle.frag",
+            "bytes": 21856,
+            "sha256": "1fe8436a743884cb65078fe8c7b38e18f5365f2a2961270916f426fd13c604af"
+          },
+          {
+            "file": "data/flutter_assets/shaders/stretch_effect.frag",
+            "bytes": 17616,
+            "sha256": "bc7599dbbbaab310efe41520574138d21fb18a88c8fe4495ed79315309336f6f"
+          },
+          {
+            "file": "LICENSE",
+            "bytes": 35823,
+            "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+          }
+        ],
+        "pe_architectures": [
+          {
+            "file": "audio_service_win_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "connectivity_plus_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "dartjni.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "dynamic_color_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "ech_http.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "file_selector_windows_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "flutter_volume_controller_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "flutter_windows.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "kazumi_plus.exe",
+            "machine": "0x8664"
+          },
+          {
+            "file": "libmpv-2.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "media_kit_event_loop.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "media_kit_video_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "screen_retriever_windows_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "tray_manager_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "url_launcher_windows_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "webview_windows_plugin.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "WebView2Loader.dll",
+            "machine": "0x8664"
+          },
+          {
+            "file": "window_manager_plugin.dll",
+            "machine": "0x8664"
+          }
+        ],
+        "aot_snapshot": {
+          "file": "data/app.so",
+          "format": "ELF64",
+          "architecture": "x86_64",
+          "machine": 62,
+          "bytes": 16843656,
+          "sha256": "178dd3447c40dcbbe2ec56d6ee30f967c390b8ba06671ac9306bb7a69c0fd032"
+        },
+        "native_assets": {
+          "windows_x64": {
+            "package:media_kit/libmpv": [
+              "absolute",
+              "libmpv-2.dll"
+            ],
+            "package:media_kit/src/player/native/core/native_event_loop_bindings.dart": [
+              "absolute",
+              "media_kit_event_loop.dll"
+            ],
+            "package:ech_http/ech_http_bindings": [
+              "absolute",
+              "ech_http.dll"
+            ]
+          }
+        },
+        "signature_scope": "Portable Windows ZIP; no Authenticode signing claim."
+      },
+      {
+        "target": "AndroidRelease",
+        "file": "Kazumi-Plus-0.1.0-android-arm64.apk",
+        "bytes": 30574589,
+        "sha256": "0c98be084efacd0e9d5cfa53fe5ece5ecb59dd3028d1cb60b339783b762250eb",
+        "source_manifest_sha256": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+        "package": {
+          "id": "app.kazumiplus.client",
+          "version_code": "12",
+          "version_name": "0.1.0"
+        },
+        "declared_abis": [
+          "arm64-v8a"
+        ],
+        "debuggable": false,
+        "signing_certificate_sha256": "53e74ad1cff993e70a3020b5d9cf34b492f9bb376602f6162a3e799f09148f19",
+        "signature_verification": {
+          "exit_code": 0,
+          "output": "Verifies\nVerified using v1 scheme (JAR signing): false\nVerified using v2 scheme (APK Signature Scheme v2): true\nVerified using v3 scheme (APK Signature Scheme v3): false\nVerified using v3.1 scheme (APK Signature Scheme v3.1): false\nVerified using v4 scheme (APK Signature Scheme v4): false\nVerified for SourceStamp: false\nNumber of signers: 1\nSigner #1 certificate DN: C=US, O=Android, CN=Android Debug\nSigner #1 certificate SHA-256 digest: 53e74ad1cff993e70a3020b5d9cf34b492f9bb376602f6162a3e799f09148f19\nSigner #1 certificate SHA-1 digest: 600a6721c609d1895bcbfabe5adc3abd6b2a5177\nSigner #1 certificate MD5 digest: 663492efb4006180ef1910db31af802f\nSigner #1 key algorithm: RSA\nSigner #1 key size (bits): 2048\nSigner #1 public key SHA-256 digest: 56a3dd3b3c2fa64cf6c8f879cf6c99d2c20ca85fd73bdc8c7cb026841b077c98\nSigner #1 public key SHA-1 digest: 2cfea93e71d53ef4647f20dfdd9a32708b83cbf7\nSigner #1 public key MD5 digest: d9c908af2e693a2d42148443db1e9154\n"
+        },
+        "native_assets": {
+          "android_arm64": {
+            "package:media_kit/native/libmediakitandroidhelper.so": [
+              "absolute",
+              "libmediakitandroidhelper.so"
+            ],
+            "package:media_kit/libmpv": [
+              "absolute",
+              "libmpv.so"
+            ],
+            "package:media_kit/src/player/native/core/native_event_loop_bindings.dart": [
+              "absolute",
+              "libmedia_kit_event_loop.so"
+            ],
+            "package:ech_http/ech_http_bindings": [
+              "absolute",
+              "libech_http.so"
+            ]
+          }
+        },
+        "native_libraries": [
+          {
+            "file": "lib/arm64-v8a/libapp.so",
+            "bytes": 15336328,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "1506e9bba7ab11b9fdf1eff50880274df377c41b886cf9228d551dd68e8c3ffb"
+          },
+          {
+            "file": "lib/arm64-v8a/libdartjni.so",
+            "bytes": 124744,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "7dfe786c956ea938b06ecd2ea28a641cbb01c05ff504bef09c57da444b8295cd"
+          },
+          {
+            "file": "lib/arm64-v8a/libdatastore_shared_counter.so",
+            "bytes": 7112,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1"
+          },
+          {
+            "file": "lib/arm64-v8a/libech_http.so",
+            "bytes": 2468464,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "16e7df9505c5ef1b323d647b3e6e832f319d1d3f465e536db7c379b471c74ab9"
+          },
+          {
+            "file": "lib/arm64-v8a/libflutter.so",
+            "bytes": 11747864,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "34f4113ae93b2c7069030f0bcfede18e7c83ed548b71a75c9ebb749403d3a060"
+          },
+          {
+            "file": "lib/arm64-v8a/libmedia_kit_event_loop.so",
+            "bytes": 7432,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "929cc149f7acdafba25703d2fcff329d3dac16304f5426c36a85a2b88066a8bc"
+          },
+          {
+            "file": "lib/arm64-v8a/libmediakitandroidhelper.so",
+            "bytes": 386584,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "a6862031015e390aa8a64536411132cf4df6a5a9dcf782f0d68b995380a1cccb"
+          },
+          {
+            "file": "lib/arm64-v8a/libmpv.so",
+            "bytes": 21727928,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "77319bc63a205123b403e35088401e7da61886b78bd0a678a282876cfb9c0f66"
+          }
+        ],
+        "native_library_count": 8
+      },
+      {
+        "target": "AndroidTvRelease",
+        "file": "Kazumi-Plus-0.1.0-android-tv-arm.apk",
+        "bytes": 50714078,
+        "sha256": "06acfb0c14521bf71c184b7802b679f6673e7769829bab2c80695fd62e452983",
+        "source_manifest_sha256": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+        "package": {
+          "id": "app.kazumiplus.client.tv",
+          "version_code": "1",
+          "version_name": "0.1.0"
+        },
+        "declared_abis": [
+          "arm64-v8a",
+          "armeabi-v7a"
+        ],
+        "debuggable": false,
+        "signing_certificate_sha256": "c3d03c8ce70e88ab53175b1a528d6a9b09cd2a8d6c65bdbbc38ebe15eef1f9e7",
+        "signature_verification": {
+          "exit_code": 0,
+          "output": "Verifies\nVerified using v1 scheme (JAR signing): false\nVerified using v2 scheme (APK Signature Scheme v2): true\nVerified using v3 scheme (APK Signature Scheme v3): false\nVerified using v3.1 scheme (APK Signature Scheme v3.1): false\nVerified using v4 scheme (APK Signature Scheme v4): false\nVerified for SourceStamp: false\nNumber of signers: 1\nSigner #1 certificate DN: CN=Kazumi Plus TV, O=Kazumi Plus\nSigner #1 certificate SHA-256 digest: c3d03c8ce70e88ab53175b1a528d6a9b09cd2a8d6c65bdbbc38ebe15eef1f9e7\nSigner #1 certificate SHA-1 digest: be1dbd58c376137e943048ae2c776c3e9a17ffcf\nSigner #1 certificate MD5 digest: 19dca77bb7c840cd93d3c10bb5318e0f\nSigner #1 key algorithm: RSA\nSigner #1 key size (bits): 4096\nSigner #1 public key SHA-256 digest: 25001d0c64c63610988407f1596623181ffcb1778de75358be2e442689da2f6f\nSigner #1 public key SHA-1 digest: db26593bcc6e82cd7f214f782a1747e07ecac90d\nSigner #1 public key MD5 digest: f6a7ee2572e276d9b3cd387275b65a3b\n"
+        },
+        "native_assets": {
+          "android_arm": {
+            "package:media_kit/native/libmediakitandroidhelper.so": [
+              "absolute",
+              "libmediakitandroidhelper.so"
+            ],
+            "package:media_kit/libmpv": [
+              "absolute",
+              "libmpv.so"
+            ],
+            "package:media_kit/src/player/native/core/native_event_loop_bindings.dart": [
+              "absolute",
+              "libmedia_kit_event_loop.so"
+            ],
+            "package:ech_http/ech_http_bindings": [
+              "absolute",
+              "libech_http.so"
+            ]
+          },
+          "android_arm64": {
+            "package:media_kit/native/libmediakitandroidhelper.so": [
+              "absolute",
+              "libmediakitandroidhelper.so"
+            ],
+            "package:media_kit/libmpv": [
+              "absolute",
+              "libmpv.so"
+            ],
+            "package:media_kit/src/player/native/core/native_event_loop_bindings.dart": [
+              "absolute",
+              "libmedia_kit_event_loop.so"
+            ],
+            "package:ech_http/ech_http_bindings": [
+              "absolute",
+              "libech_http.so"
+            ]
+          }
+        },
+        "native_libraries": [
+          {
+            "file": "lib/arm64-v8a/libapp.so",
+            "bytes": 14549896,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "42bc329ae81aabb77901a0074ae3f6e5b0c7cc182b2cc3994b9c16590c2bfb55"
+          },
+          {
+            "file": "lib/arm64-v8a/libdartjni.so",
+            "bytes": 124744,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "7dfe786c956ea938b06ecd2ea28a641cbb01c05ff504bef09c57da444b8295cd"
+          },
+          {
+            "file": "lib/arm64-v8a/libdatastore_shared_counter.so",
+            "bytes": 7112,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1"
+          },
+          {
+            "file": "lib/arm64-v8a/libech_http.so",
+            "bytes": 2468464,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "16e7df9505c5ef1b323d647b3e6e832f319d1d3f465e536db7c379b471c74ab9"
+          },
+          {
+            "file": "lib/arm64-v8a/libflutter.so",
+            "bytes": 11747864,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "34f4113ae93b2c7069030f0bcfede18e7c83ed548b71a75c9ebb749403d3a060"
+          },
+          {
+            "file": "lib/arm64-v8a/libmedia_kit_event_loop.so",
+            "bytes": 7432,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "929cc149f7acdafba25703d2fcff329d3dac16304f5426c36a85a2b88066a8bc"
+          },
+          {
+            "file": "lib/arm64-v8a/libmediakitandroidhelper.so",
+            "bytes": 386584,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "a6862031015e390aa8a64536411132cf4df6a5a9dcf782f0d68b995380a1cccb"
+          },
+          {
+            "file": "lib/arm64-v8a/libmpv.so",
+            "bytes": 21727928,
+            "elf_class": 2,
+            "machine": 183,
+            "sha256": "77319bc63a205123b403e35088401e7da61886b78bd0a678a282876cfb9c0f66"
+          },
+          {
+            "file": "lib/armeabi-v7a/libapp.so",
+            "bytes": 16089672,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "72423641d8193f9d07c238572fa8c557792b68fe644a9ccface28a92b2c64ac0"
+          },
+          {
+            "file": "lib/armeabi-v7a/libdartjni.so",
+            "bytes": 76816,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "bac0e9309426ff71bf2c377afc68e71a302aeee66037e6dfc2279887f0518bc0"
+          },
+          {
+            "file": "lib/armeabi-v7a/libdatastore_shared_counter.so",
+            "bytes": 4416,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "716c5d8d2cac8ca0edf65da8f139c7886b726ac79d542a14edeb94994ba6d3dc"
+          },
+          {
+            "file": "lib/armeabi-v7a/libech_http.so",
+            "bytes": 1660072,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "7d612e56748944861b3d09c4749654162f08b1ce8dc6d415e01bb3034b7a66d0"
+          },
+          {
+            "file": "lib/armeabi-v7a/libflutter.so",
+            "bytes": 8615900,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "c408a309f798148edc33993334e5636fc035dba2aac375066f691da8be4480f8"
+          },
+          {
+            "file": "lib/armeabi-v7a/libmedia_kit_event_loop.so",
+            "bytes": 5176,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "0ee920620ee1ecbfca7cabb56d7806da3c340f2c8d869a6c032c266a59b3b7c9"
+          },
+          {
+            "file": "lib/armeabi-v7a/libmediakitandroidhelper.so",
+            "bytes": 286720,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc"
+          },
+          {
+            "file": "lib/armeabi-v7a/libmpv.so",
+            "bytes": 18121404,
+            "elf_class": 1,
+            "machine": 40,
+            "sha256": "6035ab32a2151c404af75417c97646046cbee3d6612365841378635051ba7825"
+          }
+        ],
+        "native_library_count": 16
+      }
+    ],
+    "windows_runtime": {
+      "directory": "F:\\kazumi-plus\\.tools\\player-ui-20261013\\windows-final-run",
+      "exe_sha256": "a0c728d88624997a630bca5eaa047689c7bde20fe239d0a52648013e6f212b84",
+      "files_compared": 66,
+      "all_archive_files_match": true,
+      "file_checks": [
+        {
+          "file": "audio_service_win_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "connectivity_plus_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "dartjni.dll",
+          "matches": true
+        },
+        {
+          "file": "dynamic_color_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "ech_http.dll",
+          "matches": true
+        },
+        {
+          "file": "file_selector_windows_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "flutter_volume_controller_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "flutter_windows.dll",
+          "matches": true
+        },
+        {
+          "file": "kazumi_plus.exe",
+          "matches": true
+        },
+        {
+          "file": "libmpv-2.dll",
+          "matches": true
+        },
+        {
+          "file": "media_kit_event_loop.dll",
+          "matches": true
+        },
+        {
+          "file": "media_kit_video_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "screen_retriever_windows_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "tray_manager_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "url_launcher_windows_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "webview_windows_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "WebView2Loader.dll",
+          "matches": true
+        },
+        {
+          "file": "window_manager_plugin.dll",
+          "matches": true
+        },
+        {
+          "file": "data/app.so",
+          "matches": true
+        },
+        {
+          "file": "data/icudtl.dat",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/AssetManifest.bin",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/FontManifest.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/NativeAssetsManifest.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/NOTICES.Z",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/fonts/MiSans-Regular.ttf",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/danmaku_off.svg",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/danmaku_setting.svg",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/forward_80.png",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/loading.png",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/noface.jpeg",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/logo_android.png",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/logo_ios.png",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/logo_lanczos.ico",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/logo_linux.png",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/logo_rounded.png",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/logo_windows.ico",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/images/logo/plus_mark.svg",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/plugins/7sefun.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/plugins/baofeng.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/plugins/DM84.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/plugins/guangsu.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/plugins/modu.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/plugins/subo.json",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_AutoDownscalePre_x2.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_AutoDownscalePre_x4.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Clamp_Highlights.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Restore_CNN_M.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Restore_CNN_S.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Restore_CNN_VL.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Upscale_CNN_x2_M.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Upscale_CNN_x2_S.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/Anime4K_Upscale_CNN_x2_VL.glsl",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/shaders/LICENSE",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/assets/statements/statements.txt",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/fonts/MaterialIcons-Regular.otf",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/licenses/ech_http/BORINGSSL_LICENSE",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/licenses/ech_http/CA_BUNDLE_LICENSE",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/licenses/ech_http/cacert.pem",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/licenses/ech_http/CURL_LICENSE",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/licenses/ech_http/LIBCXX_LICENSE",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/licenses/ech_http/THIRD_PARTY_NOTICES.md",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/packages/cupertino_icons/assets/CupertinoIcons.ttf",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/packages/wakelock_plus/assets/no_sleep.js",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/shaders/ink_sparkle.frag",
+          "matches": true
+        },
+        {
+          "file": "data/flutter_assets/shaders/stretch_effect.frag",
+          "matches": true
+        },
+        {
+          "file": "LICENSE",
+          "matches": true
+        }
+      ]
+    },
+    "failure_count": 0,
+    "failures": [],
+    "previous_candidate": {
+      "evidence_file": "F:\\kazumi-plus\\.tools\\player-ui-20261013\\artifact-readback.json",
+      "batch_directory": "F:\\kazumi-plus\\dist\\packages\\20261013-231346-345-7a81c1ef-fbc64b75",
+      "source_manifest_sha256": "26f7059c4f164f99f64e98c16467250856b83312dce282decca8f82d36a1c45d",
+      "changed_source_files": [
+        "docs/unified-player-implementation.md",
+        "lib/pages/media/source_player_page.dart",
+        "lib/television/tv_playback_controls.dart"
+      ],
+      "scope": "Earlier artifact readback preserved; earlier runtime acceptance does not establish final binary acceptance."
+    },
+    "runtime_acceptance": "Artifacts and Windows extracted files verified here; playback acceptance is recorded separately by each platform owner."
+  },
+  "windows": {
+    "schema_version": 1,
+    "status": "passed_limited_final_windows_runtime",
+    "verified_at": "2026-10-14T00:25:10.9915737+08:00",
+    "batch": "20261013-235146-363-7a81c1ef-6ab7eaba",
+    "source_manifest_sha256": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+    "actual_exe_sha256": "a0c728d88624997a630bca5eaa047689c7bde20fe239d0a52648013e6f212b84",
+    "anime": {
+      "source": "7sefun",
+      "title": "尼古喵喵",
+      "observed_seconds": [
+        183,
+        194,
+        465
+      ],
+      "original_comment_download_danmaku_entries_preserved": true,
+      "episode": "第01集",
+      "saved_seconds": 538
+    },
+    "movie": {
+      "decoded_start_position_ms": 86623,
+      "title": "新集体 New Group",
+      "unsupported_entries_hidden": true,
+      "old_progress_ms": 86000,
+      "decoded": "1920x1080",
+      "saved_progress_seconds": 387,
+      "pip_enter_and_return": true,
+      "fullscreen_and_escape_return": true,
+      "source": "kazumi-plus.baofeng"
+    },
+    "tv": {
+      "saved_seconds": 2032,
+      "episode": "第2集",
+      "unsupported_entries_hidden": true,
+      "title": "蒸蒸日上",
+      "decoded_start_position_ms": 1788000,
+      "old_progress_ms": 1788000,
+      "decoded": "1920x1080",
+      "observed_seconds": [
+        1877,
+        1940,
+        1954
+      ],
+      "selected_episode_panel_correct": true,
+      "collection_preserved": true,
+      "source": "kazumi-plus.baofeng"
+    },
+    "evidence": [
+      "windows-final-anime-controls.jpg",
+      "windows-final-anime-panel.jpg",
+      "windows-final-movie-controls.jpg",
+      "windows-final-movie-fullscreen.jpg",
+      "windows-final-movie-pip.jpg",
+      "windows-final-movie-pip-return.jpg",
+      "windows-final-movie-saved.jpg",
+      "windows-final-tv-controls.jpg",
+      "windows-final-tv-panel.jpg",
+      "windows-final-tv-saved.jpg"
+    ],
+    "not_exercised": [
+      "audio output quality",
+      "multi-version movie completion",
+      "offline playback and download",
+      "SyncPlay room",
+      "private-mode runtime",
+      "all providers and long playback reliability"
+    ]
+  },
+  "android_phone": {
+    "schema_version": 1,
+    "status": "passed_limited_final_package_regression",
+    "verified_at_utc": "2026-10-13T16:06:34.4196225Z",
+    "batch": "20261013-235146-363-7a81c1ef-6ab7eaba",
+    "source_commit": "7a81c1ef619859e460f725b6225749d0660630db",
+    "source_dirty": true,
+    "source_manifest_digest": "c50f3181893c7ac3c7ded097da323c9f16949e788d6414bab7ee0c65e03fb4a1",
+    "apk_file": "Kazumi-Plus-0.1.0-android-arm64.apk",
+    "apk_sha256": "0c98be084efacd0e9d5cfa53fe5ece5ecb59dd3028d1cb60b339783b762250eb",
+    "actual_installed_apk_sha256": "0c98be084efacd0e9d5cfa53fe5ece5ecb59dd3028d1cb60b339783b762250eb",
+    "installed_sha_matches_manifest": true,
+    "device": {
+      "real_device": false,
+      "native_bridge": "libndk_translation.so",
+      "abis": [
+        "x86_64",
+        "arm64-v8a"
+      ],
+      "api": 36,
+      "serial": "emulator-5554",
+      "avd": "KazumiPlus_API36"
+    },
+    "installation": {
+      "mode": "adb install -r",
+      "privacy_changed": false,
+      "package_evidence": "final/package.txt",
+      "uninstall_or_data_clear": false,
+      "result": "Success"
+    },
+    "preserved_library": {
+      "evidence": [
+        "final/02-library.png",
+        "final/27-finished-library.png"
+      ],
+      "titles": [
+        "新集体 New Group",
+        "蒸蒸日上",
+        "Love or Not"
+      ]
+    },
+    "error_header_retry": {
+      "first_failed_open_time_device": "10-13 15:59:35.025",
+      "note": "中部正文仍可滚动，固定顶栏提供首屏完整重试入口",
+      "error_back_to_detail": true,
+      "episode": "第1集",
+      "second_failed_open_time_device": "10-13 15:59:50.420",
+      "title": "Love or Not",
+      "evidence": [
+        "final/04-error-header-visible.png",
+        "final/05-header-retry-executed.png",
+        "final/error-retry-log.txt",
+        "final/06-error-back.png",
+        "final/07-loading-back.png"
+      ],
+      "clicked_without_scrolling": true,
+      "entry_immediate_back_to_detail": true,
+      "passed": true,
+      "source_remains_unavailable": true,
+      "new_request_confirmed": true,
+      "visible_on_initial_portrait_screen": true,
+      "header_bounds": "[954,128][1080,254]"
+    },
+    "tv": {
+      "id": "167221",
+      "provider": "kazumi-plus.baofeng",
+      "resume_confirmed_ms": 2428000,
+      "advanced_to": "40:52",
+      "episode": "episode:1",
+      "normal_exit_saved": "40:54",
+      "retained_progress": "40:28",
+      "title": "蒸蒸日上",
+      "decoded": "1920x1080",
+      "passed": true,
+      "evidence": [
+        "final/08-tv-preserved.png",
+        "final/10-tv-playing.png",
+        "final/11-tv-advanced.png",
+        "final/12-tv-saved.png"
+      ]
+    },
+    "movie": {
+      "evidence": [
+        "final/13-movie-preserved.png",
+        "final/15-movie-playing.png",
+        "final/17-landscape-speed-menu.png",
+        "final/rate-1.25.txt",
+        "final/18-pip.png",
+        "final/19-pip-actions.png",
+        "final/20-movie-saved.png"
+      ],
+      "pip_danmaku_absent": true,
+      "selected_rate": 1.25,
+      "passed": true,
+      "portrait_and_landscape": true,
+      "media_session_rate": 1.25,
+      "normal_exit_saved": "24:08",
+      "resume_confirmed_ms": 1333000,
+      "retained_progress": "22:13",
+      "provider": "kazumi-plus.baofeng",
+      "pip_return_succeeded": true,
+      "pip_visible_picture": true,
+      "advanced_to": "22:35",
+      "fullscreen_back_retained_route": true,
+      "id": "167730",
+      "decoded": "1920x1080",
+      "landscape_speed_menu_visible": true,
+      "pip_actions": [
+        "暂停",
+        "快进80秒"
+      ],
+      "title": "新集体 New Group",
+      "episode": "feature",
+      "pip_entered_pinned": true
+    },
+    "anime": {
+      "visible_picture": true,
+      "observed_progress": [
+        "02:09",
+        "02:24"
+      ],
+      "provider": "7sefun",
+      "automatic_danmaku": "接口返回403，不能计为实际弹幕显示通过",
+      "episode": "第01集",
+      "title": "尼古喵喵",
+      "retained_anime_only_features": [
+        "弹幕入口",
+        "评论",
+        "缓存剧集"
+      ],
+      "evidence": [
+        "final/24-anime-start.png",
+        "final/25-anime-playing.png",
+        "final/26-anime-advanced.png"
+      ],
+      "passed_basic_playback": true
+    },
+    "error_log_scan": {
+      "fatal_exception": 0,
+      "log": "final/logcat.txt",
+      "unhandled_exception": 0,
+      "anr_in": 0
+    },
+    "supplemental_candidate_record": {
+      "batch": "20261013-231346-345-7a81c1ef-fbc64b75",
+      "path": "candidate-summary.json",
+      "apk_sha256": "836a85dc6ecbad5f5813b4e8db9d027b551c867844e9068909fa441e76473267",
+      "additional_checked": [
+        "锁定和解锁",
+        "手势定位",
+        "恢复期间快速切第2再第3",
+        "冷启动两类进度回读"
+      ],
+      "note": "这些更广操作绑定候选包，未冒称全部在最终包重跑。最终回归覆盖顶栏重试修复、三类实播、准确恢复、横屏菜单和PiP。"
+    },
+    "limits": [
+      "真机与音频输出质量未验证",
+      "未下载或运行离线动漫，未加入SyncPlay房间",
+      "暴风广告低PTS仍是既有来源边界，候选实跑见回退，最终限定片段未修复该问题",
+      "未新增或运行自动化测试套件"
+    ],
+    "cleanup": {
+      "emulator_kill_not_run": true,
+      "emulator_still_running": true,
+      "final_ui_before_stop": "片单",
+      "app_force_stopped_after_save": true,
+      "evidence": "final/media-session-ended.txt",
+      "media_session_after_exit": "NONE active=false",
+      "normal_player_exits": true,
+      "app_pid_absent": true
+    }
+  },
+  "android_tv": {
+    "recordedAt": "2026-10-14T00:11:34.6088447+08:00",
+    "status": "required_final_regressions_passed_on_api36_tv_emulator",
+    "serial": "emulator-5556",
+    "avd": "KazumiPlus_TV_API36",
+    "physicalDevice": false,
+    "runtime": "Android 16 API36 / x86_64 emulator / arm64-v8a APK through libndk_translation.so",
+    "finalBatch": "20261013-235146-363-7a81c1ef-6ab7eaba",
+    "installedApkSha256": "06ACFB0C14521BF71C184B7802B679F6673E7769829BAB2C80695FD62E452983",
+    "distributionHashMatchesInstalled": true,
+    "installEvidence": "final-installation.json",
+    "finalChecks": [
+      {
+        "detail": "错误页XML仅有返回、顶栏重试、错误正文和中心重试；底层TV标题/进度/选集不在语义树；中心重试focused=true。",
+        "evidence": [
+          "final-06-error-focused.xml",
+          "final-06-error-focused.png"
+        ],
+        "name": "错误层焦点隔离",
+        "status": "passed"
+      },
+      {
+        "detail": "在中心重试焦点发送DPAD_CENTER，初始化完成日志计数1→2，确实启动新播放器请求。",
+        "evidence": [
+          "final-07-retry-count.json",
+          "final-runtime-logcat.txt"
+        ],
+        "name": "遥控器确认重试",
+        "status": "passed"
+      },
+      {
+        "detail": "重试后立即BACK一次返回详情；新播放器开始创建但未完成初始化即释放。",
+        "evidence": [
+          "final-09-retry-back-direct.xml",
+          "final-runtime-logcat.txt"
+        ],
+        "timingNote": "final-08截屏后再BACK的尝试跨过初始化完成边界，结果重新失败；最终断点结论基于final-09立即BACK序列。",
+        "name": "初始化中返回直接退出",
+        "status": "passed"
+      },
+      {
+        "detail": "暴风蒸蒸日上第2集1920x1080，resume confirmed=52000ms；恢复中MEDIA_PAUSE后仍PAUSED 52023ms。",
+        "evidence": [
+          "final-14-tv-resuming.png",
+          "final-15-tv-confirmed.xml",
+          "final-15-tv-confirmed.png",
+          "final-15-tv-confirmed.txt",
+          "final-runtime-logcat.txt"
+        ],
+        "name": "电视剧基础实播与恢复中暂停",
+        "status": "passed"
+      },
+      {
+        "detail": "第一下BACK仅收起TV播放操作层，第二下回详情。",
+        "evidence": [
+          "final-16-tv-back-layer1.xml",
+          "final-17-tv-back-layer2.xml"
+        ],
+        "name": "正常播放返回两层",
+        "status": "passed"
+      },
+      {
+        "detail": "7sefun FX战士久留美第01集1920x1080，旧15:04历史继续到15:24；MEDIA_PAUSE后PAUSED 924506ms；保留动漫弹幕入口。",
+        "evidence": [
+          "final-18-history.xml",
+          "final-20-anime-confirmed.xml",
+          "final-20-anime-confirmed.png",
+          "final-20-anime-confirmed.txt",
+          "final-runtime-logcat.txt"
+        ],
+        "name": "动漫兼容基础实播",
+        "status": "passed"
+      },
+      {
+        "detail": "暴风新集体New Group正片1920x1080，旧25:02记录恢复确认1502000ms；推进到25:19后MEDIA_PAUSE，PAUSED 1519223ms。",
+        "evidence": [
+          "final-21-movie-history.xml",
+          "final-24-movie-confirmed.xml",
+          "final-24-movie-confirmed.png",
+          "final-24-movie-confirmed.txt",
+          "final-runtime-logcat.txt"
+        ],
+        "name": "电影基础实播与旧历史续播",
+        "status": "passed"
+      }
+    ],
+    "earlierCandidateEvidenceOnly": [
+      "精确±10秒 28103→38103→28103ms",
+      "1.5x与切第2集保留倍速",
+      "电影force-stop PID3184→5100的冷续播"
+    ],
+    "earlierCandidateRecord": "candidate-summary.json",
+    "unexercised": [
+      "多版本电影片尾不自动串播：当前可播电影只有单正片。",
+      "完整连续多集快速切换与恢复中立即退出压力组合。",
+      "物理Android TV硬件。"
+    ],
+    "externalSourceLimits": [
+      "暴风他来了请闭眼第01集地址无法打开，作为异常页回归样本。",
+      "动漫弹幕dandanplay API403，视频解码与控制正常。"
+    ],
+    "fatalEventMatches": 0,
+    "preservedExistingData": true,
+    "privacySettingsChanged": false,
+    "sourceFilesChanged": false,
+    "appForceStopped": true,
+    "logcatStopped": true,
+    "emulatorClosed": false
+  },
+  "automated_tests_run": false,
+  "documentation_added_after_build": true,
+  "limitations": [
+    "Android ARM Release via API36 x86_64 emulator translation, no physical device validation",
+    "audio output quality not independently measured",
+    "upstream danmaku 403 and some source media failures remain external limitations",
+    "multi-version movie completion, full stress switching, offline download and SyncPlay not fully exercised",
+    "existing source advertising PTS discontinuity is not fixed by UI work"
+  ],
+  "resource_cleanup": {
+    "recorded_at": "2026-10-14T00:28:27.7721219+08:00",
+    "owned_windows_process_count": 0,
+    "dedicated_phone_connected": false,
+    "dedicated_tv_connected": false,
+    "user_data_preserved": true,
+    "logcat_processes_stopped_by_owners": true,
+    "unrelated_chrome_or_codex_runtime_not_terminated": true
+  },
+  "post_build_source_check": {
+    "changed_existing_files": [
+      "README.md",
+      "docs/unified-player-implementation.md"
+    ],
+    "non_documentation_changes": 0,
+    "new_file": "docs/unified-player-acceptance-2026-10-14.json"
+  }
+}

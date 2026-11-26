@@ -1,30 +1,46 @@
 import 'dart:async';
-import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
+import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
+import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
+import 'package:kazumi/bean/widget/loading_indicator.dart';
+import 'package:kazumi/bean/widget/media_error_widget.dart';
+import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/media/media_models.dart';
-import 'package:kazumi/pages/player/controller/player_debug_controller.dart';
-import 'package:kazumi/pages/player/controller/player_playback_controller.dart';
-import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/pages/download/download_controller.dart';
+import 'package:kazumi/pages/download/download_episode_sheet.dart';
+import 'package:kazumi/pages/download/download_target.dart';
+import 'package:kazumi/pages/media/source_playback_session.dart';
+import 'package:kazumi/pages/player/player_controls_controller.dart';
+import 'package:kazumi/pages/player/player_item.dart';
+import 'package:kazumi/pages/player/player_quality_sheet.dart';
+import 'package:kazumi/pages/video/episode_selection_panel.dart';
+import 'package:kazumi/pages/video/player_content_tabs.dart';
+import 'package:kazumi/pages/video/video_page_layout.dart';
+import 'package:kazumi/pages/video/video_side_panel.dart';
+import 'package:kazumi/pages/video/video_system_bars.dart';
 import 'package:kazumi/services/media/media_catalog.dart';
-import 'package:kazumi/services/media/source_media_library.dart';
-import 'package:kazumi/services/media/media_resume_session.dart';
+import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/services/player/audio_controller.dart';
+import 'package:kazumi/services/player/pip_utils.dart';
+import 'package:kazumi/services/player/timed_shutdown_service.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/television/tv_playback_controls.dart';
-import 'package:kazumi/services/video_source/video_source_format.dart';
-import 'package:kazumi/services/video_source/webview_video_source_service.dart';
-import 'package:kazumi/utils/async_serial_queue.dart';
-import 'package:kazumi/utils/http_headers.dart';
-import 'package:media_kit_video/media_kit_video.dart';
-import 'package:media_kit/media_kit.dart' show Player;
+import 'package:kazumi/utils/device.dart';
+import 'package:mobx/mobx.dart' as mobx;
+import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// 影视复用原播放内核，作品资料和进度不进入 Bangumi 控制器。
+enum _SourcePlayerFocusPhase { player, loading, error }
+
+/// 影视沿用动漫的布局和通用控件，来源身份与进度留在独立会话中。
 class SourcePlayerPage extends StatefulWidget {
   const SourcePlayerPage({super.key, required this.playbackContext});
+
   final PlaybackContext playbackContext;
 
   @override
@@ -32,751 +48,467 @@ class SourcePlayerPage extends StatefulWidget {
 }
 
 class _SourcePlayerPageState extends State<SourcePlayerPage>
-    with WidgetsBindingObserver {
-  final _library = SourceMediaLibrary.instance;
-  final _resolver = WebViewVideoSourceService();
-  final _switches = AsyncSerialQueue();
-  final _debug = PlayerDebugController();
+    with SingleTickerProviderStateMixin, WindowListener {
+  final _keyboardFocus = FocusNode(debugLabel: 'Source player shortcut scope');
+  final _episodePanelKey = GlobalKey<EpisodeSelectionPanelState>();
+  final _sidePanelKey = GlobalKey<VideoSidePanelState>();
   final _tvOverlay = TvPlaybackOverlayController();
-  final _audioOwner = Object();
-  bool _audioRequested = false;
-  AudioController get _audio => inject<AudioController>();
-  late final PlayerPlaybackController _playback;
-  Timer? _refreshTimer;
-  Timer? _saveTimer;
-  Timer? _loadTimeout;
-  StreamSubscription<bool>? _completedSubscription;
-  MediaResumeSession? _resumeSession;
-  bool _resumePending = false;
-  int _generation = 0;
-  int _readyGeneration = -1;
-  int _roadIndex = 0;
-  int _episodeIndex = 0;
-  String _videoUrl = '';
-  String? _error;
-  bool _loading = true;
-  bool _ready = false;
-  bool _exiting = false;
-  bool _reportedPlayback = false;
-  double _speed = 1;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
+  final _statusFocusScope = FocusScopeNode(debugLabel: '影视播放状态层');
+  final _statusRetryFocus = FocusNode(debugLabel: '影视播放重试');
+  final _statusBackFocus = FocusNode(debugLabel: '影视播放状态返回');
+  final _downloadController = inject<DownloadController>();
+  late final SourcePlaybackSession _session;
+  late final bool _disableAnimations;
+  late final mobx.ReactionDisposer _pipModeListener;
+  late final TabController _tabs;
+  LocalHistoryEntry? _desktopPipEntry;
+  bool _initialized = false;
+  bool _leaving = false;
+  bool _canPop = false;
+  _SourcePlayerFocusPhase? _tvFocusPhase;
+  int _focusRevision = 0;
 
-  MediaSummary get _media => widget.playbackContext.media;
-  SourcePlaylist get _playlist => widget.playbackContext.playlist;
-  PlaybackRoad get _road => _playlist.roads[_roadIndex];
-  PlayableEpisode get _episode => _road.episodes[_episodeIndex];
+  bool get _statusVisible => _session.loading || _session.errorMessage != null;
+
+  void _scheduleTelevisionFocus() {
+    if (!PlatformEnvironmentService.isTelevision) return;
+    final phase = _session.errorMessage != null
+        ? _SourcePlayerFocusPhase.error
+        : _session.loading
+        ? _SourcePlayerFocusPhase.loading
+        : _SourcePlayerFocusPhase.player;
+    if (_tvFocusPhase == phase) return;
+    _tvFocusPhase = phase;
+    final revision = ++_focusRevision;
+    // 覆盖层布局完成后再交接焦点；旧帧不能抢回新状态或其他路由的焦点。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _leaving ||
+          revision != _focusRevision ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
+      switch (phase) {
+        case _SourcePlayerFocusPhase.error:
+          _statusRetryFocus.requestFocus();
+        case _SourcePlayerFocusPhase.loading:
+          _statusBackFocus.requestFocus();
+        case _SourcePlayerFocusPhase.player:
+          _keyboardFocus.requestFocus();
+          _tvOverlay.requestFocus();
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _speed = GStorage.getSetting(SettingsKeys.defaultPlaySpeed);
-    _playback = PlayerPlaybackController(
-      shaderAssetService: inject<ShaderAssetService>(),
-      debug: _debug,
-      videoUrl: () => _videoUrl,
-      isLocalPlayback: () => false,
+    if (isDesktop()) windowManager.addListener(this);
+    _disableAnimations = GStorage.getSetting(
+      SettingsKeys.playerDisableAnimations,
     );
-    _debug.playerLogLevel = GStorage.getSetting(SettingsKeys.playerLogLevel);
-    _playback.playerSpeed = _speed;
-    if (PlatformEnvironmentService.isTelevision) {
-      unawaited(_bindAudioSession());
-    }
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!mounted || _exiting) return;
-      if (!_ready) {
-        _syncAudioSession();
-        return;
-      }
-      _playback.syncPlaybackState();
-      setState(() {
-        _position = _playback.playerPosition;
-        _duration = _playback.playerDuration;
-      });
-      _syncAudioSession();
-      // 记录实际视频参数与推进的位置，供运行验收核对。
-      if (!_resumePending &&
-          !_reportedPlayback &&
-          _debug.playerWidth > 0 &&
-          _position.inSeconds >= 2) {
-        _reportedPlayback = true;
-        _loadTimeout?.cancel();
-        KazumiLogger().i(
-          'PlusPlayback: decoded media=${_media.ref.key} episode=${_episode.key} '
-          'size=${_debug.playerWidth}x${_debug.playerHeight} position=${_position.inMilliseconds}',
-          forceLog: true,
-        );
-      }
-    });
-    _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      unawaited(_saveProgress());
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_playlist.roads.isEmpty ||
-          _playlist.roads.every((road) => road.episodes.isEmpty)) {
-        setState(() {
-          _loading = false;
-          _error = '来源没有提供可播放的内容。';
-        });
-        return;
-      }
-      final road = widget.playbackContext.roadIndex.clamp(
-        0,
-        _playlist.roads.length - 1,
-      );
-      final episodes = _playlist.roads[road].episodes;
-      if (episodes.isEmpty) {
-        setState(() {
-          _loading = false;
-          _error = '所选线路没有剧集，请切换其他线路。';
-        });
-        return;
-      }
-      unawaited(
-        _switchEpisode(
-          road,
-          widget.playbackContext.episodeIndex.clamp(0, episodes.length - 1),
-        ),
-      );
-    });
-  }
-
-  bool get _canControlAudio =>
-      mounted &&
-      !_exiting &&
-      _ready &&
-      !_loading &&
-      !_resumePending &&
-      _readyGeneration == _generation;
-
-  Future<void> _bindAudioSession() async {
-    _audioRequested = true;
-    try {
-      // 复用应用级音频服务，直接提供影视身份，不创建虚构的 Bangumi 资料。
-      await _audio.bindCallbacks(
-        owner: _audioOwner,
-        artworkUrl: null,
-        onPlay: () => _handleAudioPlayback(true),
-        onPause: () => _handleAudioPlayback(false),
-        onSkipToNext: () => _handleAudioEpisode(1),
-        onSkipToPrevious: () => _handleAudioEpisode(-1),
-        onSeek: _handleAudioSeek,
-      );
-      if (!mounted || _exiting) {
-        await _releaseAudioSession();
-        return;
-      }
-      _syncAudioSession();
-    } catch (error) {
-      KazumiLogger().w('影视电视媒体会话绑定失败', error: error);
-    }
-  }
-
-  Future<void> _handleAudioPlayback(bool playing) async {
-    if (playing && !_canControlAudio) return;
-    // 系统中断必须能暂停恢复中的实际音频，定位和继续播放仍等待恢复确认。
-    if (!mounted || _exiting || !_ready || _readyGeneration != _generation) {
-      return;
-    }
-    final player = _playback.mediaPlayer;
-    if (player == null) return;
-    try {
-      if (playing) {
-        await player.play();
-      } else {
-        await player.pause();
-      }
-      _syncAudioSession();
-    } catch (error) {
-      if (mounted && !_exiting) {
-        KazumiLogger().w('影视电视媒体键操作失败', error: error);
-      }
-    }
-  }
-
-  Future<void> _handleAudioEpisode(int direction) async {
-    if (!_canControlAudio) return;
-    final index = _episodeIndex + direction;
-    if (index < 0 || index >= _road.episodes.length) return;
-    await _switchEpisode(_roadIndex, index);
-  }
-
-  Future<void> _handleAudioSeek(Duration requested) async {
-    if (!_canControlAudio) return;
-    final player = _playback.mediaPlayer;
-    if (player == null) return;
-    final upper = _duration.inMilliseconds > 0
-        ? _duration.inMilliseconds - 1
-        : requested.inMilliseconds;
-    final position = Duration(
-      milliseconds: requested.inMilliseconds.clamp(0, upper < 0 ? 0 : upper),
+    _session = SourcePlaybackSession(
+      context: widget.playbackContext,
+      controls: PlayerControlsController(
+        shaderAssetService: inject<ShaderAssetService>(),
+        audioController: inject<AudioController>(),
+      ),
+      catalog: inject<MediaCatalogService>(),
     );
-    try {
-      // 捕获旧播放器引用，切集后不能把延迟定位应用到新的播放会话。
-      await player.seek(position);
-    } catch (error) {
-      if (mounted && !_exiting && identical(player, _playback.mediaPlayer)) {
-        KazumiLogger().w('影视电视媒体定位失败', error: error);
-      }
-    }
-  }
-
-  void _syncAudioSession() {
-    if (!_audioRequested ||
-        !_audio.isBoundTo(_audioOwner) ||
-        _playlist.roads.isEmpty ||
-        _roadIndex >= _playlist.roads.length ||
-        _road.episodes.isEmpty ||
-        _episodeIndex >= _road.episodes.length) {
-      return;
-    }
-    final player = _playback.mediaPlayer;
-    unawaited(
-      _audio
-          .updateSession(
-            owner: _audioOwner,
-            mediaId: 'source:${_media.ref.key}:${_road.id}:${_episode.key}',
-            title: _media.title,
-            album: _media.sourceName,
-            artist: _episode.title,
-            duration: _duration,
-            playing: _ready && !_exiting && (player?.state.playing ?? false),
-            loading: _loading || _resumePending,
-            buffering: player?.state.buffering ?? false,
-            completed: player?.state.completed ?? false,
-            updatePosition: _position,
-            bufferedPosition: player?.state.buffer ?? Duration.zero,
-            speed: _speed,
-            queueIndex: _episodeIndex,
-            canSkipToNext: _episodeIndex + 1 < _road.episodes.length,
-            canSkipToPrevious: _episodeIndex > 0,
-          )
-          .catchError((Object error) {
-            if (mounted && !_exiting) {
-              KazumiLogger().w('影视电视媒体状态更新失败', error: error);
-            }
-          }),
+    // 电影隐藏无意义的「选集（第 1 集）」页签，仅展示「片源与清晰度」；
+    // 电视剧提供「选集」与「片源与清晰度」，严禁出现弹幕与评论。
+    _tabs = TabController(length: _session.isMovie ? 1 : 2, vsync: this);
+    _pipModeListener = mobx.reaction<bool>(
+      (_) => _session.isPip,
+      _syncDesktopPipHistory,
     );
-  }
-
-  Future<void> _releaseAudioSession() async {
-    if (!_audioRequested) return;
-    _audioRequested = false;
-    try {
-      await _audio.deactivate(owner: _audioOwner);
-    } catch (error) {
-      KazumiLogger().w('影视电视媒体会话释放失败', error: error);
-    }
-  }
-
-  Future<void> _switchEpisode(
-    int roadIndex,
-    int episodeIndex, {
-    bool resume = true,
-  }) async {
-    if (_exiting || roadIndex < 0 || roadIndex >= _playlist.roads.length) {
-      return;
-    }
-    final episodes = _playlist.roads[roadIndex].episodes;
-    if (episodeIndex < 0 || episodeIndex >= episodes.length) return;
-    final generation = ++_generation;
-    // 重试同一集也立即撤销旧控件的 seek 权限，不等待队列清理完成。
-    _readyGeneration = -1;
-    _resumeSession?.cancel();
-    _loadTimeout?.cancel();
-    _resolver.cancel();
-    _syncAudioSession();
-    await _switches.run(() async {
-      if (!mounted || _exiting || generation != _generation) return;
-      await _saveProgress();
-      await _completedSubscription?.cancel();
-      _completedSubscription = null;
-      _ready = false;
-      await _playback.stop();
-      if (!mounted || _exiting || generation != _generation) return;
-      setState(() {
-        _roadIndex = roadIndex;
-        _episodeIndex = episodeIndex;
-        _loading = true;
-        _error = null;
-        _position = Duration.zero;
-        _duration = Duration.zero;
-        _reportedPlayback = false;
-      });
-      try {
-        final provider = inject<MediaCatalogService>().providerById(
-          _media.ref.ruleId,
-        );
-        if (provider == null) throw StateError('原来源已禁用或删除，请返回规则管理恢复来源。');
-        final plugin = provider.plugin;
-        var offset = 0;
-        if (resume && GStorage.getSetting(SettingsKeys.playResume)) {
-          final progress = _library.progressFor(_media.ref, _road.id, _episode);
-          if (progress != null &&
-              (progress.durationMs <= 0 ||
-                  progress.positionMs < progress.durationMs - 5000)) {
-            offset = progress.positionMs ~/ 1000;
-          }
-        }
-        // Android 的输出重建会补偿定位；保存的位置在其后显式恢复并回读。
-        _resumePending = Platform.isAndroid && offset > 0;
-        final resumeSession = _resumePending ? MediaResumeSession() : null;
-        _resumeSession = resumeSession;
-        final path = Uri.parse(_episode.url).path.toLowerCase();
-        var format = VideoSourceFormat.auto;
-        if (path.endsWith('.m3u8')) {
-          _videoUrl = _episode.url;
-          format = VideoSourceFormat.hls;
-        } else if (RegExp(r'\.(mp4|mkv|webm|mov|avi|m4v|ts)$').hasMatch(path)) {
-          _videoUrl = _episode.url;
-        } else {
-          final resolved = await _resolver.resolve(
-            _episode.url,
-            useLegacyParser: plugin.useLegacyParser,
-            offset: offset,
-            timeout: const Duration(seconds: 30),
-          );
-          _videoUrl = resolved.url;
-          format = resolved.format;
-        }
-        if (!mounted || _exiting || generation != _generation) return;
-        _playback.resetForInit();
-        final headers = <String, String>{
-          'User-Agent': plugin.userAgent.isEmpty
-              ? getRandomUA()
-              : plugin.userAgent,
-          'Referer': plugin.referer.isEmpty ? plugin.baseUrl : plugin.referer,
-        };
-        _loadTimeout = Timer(const Duration(seconds: 45), () {
-          if (_debug.playerWidth == 0 && generation == _generation) {
-            _failPlayback('媒体加载超时，请重试或更换线路。', generation);
-          }
-        });
-        final player = await _playback.createVideoController(
-          headers,
-          plugin.adBlocker,
-          canInstall: () => mounted && !_exiting && generation == _generation,
-          offset: _resumePending ? 0 : offset,
-          videoSourceFormat: format,
-          onPlaybackError: (message) => _failPlayback(message, generation),
-          honorPlatformDecoderFallback: true,
-        );
-        if (player == null ||
-            !mounted ||
-            _exiting ||
-            generation != _generation) {
-          return;
-        }
-        await _playback.setPlaybackSpeed(_speed);
-        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-          await _playback.setVolume(
-            GStorage.getSetting(SettingsKeys.defaultVolume),
-          );
-        }
-        _playback.loading = false;
-        _ready = true;
-        _readyGeneration = generation;
-        _completedSubscription = player.stream.completed.listen((completed) {
-          if (!completed ||
-              generation != _generation ||
-              _exiting ||
-              _resumePending) {
-            return;
-          }
-          unawaited(_saveProgress());
-          if (GStorage.getSetting(SettingsKeys.autoPlayNext) &&
-              _media.ref.kind == MediaKind.tv &&
-              _episodeIndex + 1 < _road.episodes.length) {
-            unawaited(_switchEpisode(_roadIndex, _episodeIndex + 1));
-          }
-        });
-        if (mounted) setState(() => _loading = false);
-        if (resumeSession != null) {
-          unawaited(
-            _restoreProgress(resumeSession, player, offset, generation),
-          );
-        }
-      } catch (error, stackTrace) {
-        if (!mounted || _exiting || generation != _generation) return;
-        KazumiLogger().e(
-          'PlusPlayback: 初始化失败',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        setState(() {
-          _loading = false;
-          _error = '播放失败：$error';
-        });
-        _loadTimeout?.cancel();
-      }
-    });
-  }
-
-  Future<void> _saveProgress() async {
-    if (GStorage.getSetting(SettingsKeys.privateMode)) return;
-    if (_resumePending) return;
-    if (!_ready || _playlist.roads.isEmpty) return;
-    final position = _playback.playerPosition;
-    final duration = _playback.playerDuration;
-    if (duration <= Duration.zero && position <= Duration.zero) return;
-    try {
-      await _library.recordProgress(
-        media: _media,
-        road: _road,
-        episode: _episode,
-        positionMs: position.inMilliseconds,
-        durationMs: duration.inMilliseconds,
-        season: _playlist.season,
-      );
-    } catch (error) {
-      KazumiLogger().e('PlusPlayback: 保存进度失败', error: error);
-    }
-  }
-
-  Future<void> _restoreProgress(
-    MediaResumeSession session,
-    Player player,
-    int seconds,
-    int generation,
-  ) async {
-    try {
-      await session.restore(
-        player: player,
-        video: _playback.videoController!,
-        position: Duration(seconds: seconds),
-        isCurrent: () =>
-            mounted &&
-            !_exiting &&
-            generation == _generation &&
-            _playback.isCurrentPlayer(player),
-      );
-      if (!mounted || _exiting || generation != _generation) return;
-      setState(() => _resumePending = false);
-      KazumiLogger().i(
-        'PlusPlayback: resume confirmed media=${_media.ref.key} '
-        'episode=${_episode.key} position=${_playback.playerPosition.inMilliseconds}',
-        forceLog: true,
-      );
-      await _saveProgress();
-    } catch (error) {
-      if (!mounted ||
-          _exiting ||
-          generation != _generation ||
-          session.isCancelled) {
-        return;
-      }
-      _failPlayback('恢复观看进度失败，旧进度已保留。可重试或从头播放。', generation);
-    }
-  }
-
-  void _failPlayback(String message, int generation) {
-    if (!mounted || _exiting || generation != _generation) return;
-    ++_generation;
-    _resumeSession?.cancel();
-    _loadTimeout?.cancel();
-    setState(() {
-      _ready = false;
-      _loading = false;
-      _error = message;
-    });
-    unawaited(_switches.run(_playback.stop));
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      unawaited(_saveProgress());
-      if (!GStorage.getSetting(SettingsKeys.backgroundPlayback)) {
-        unawaited(_playback.mediaPlayer?.pause());
-        unawaited(_playback.setPrefetchSuspended(true));
-      }
-    } else if (state == AppLifecycleState.resumed) {
-      unawaited(_playback.setPrefetchSuspended(false));
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    _session.fullscreen.attach(ModalRoute.of(context)!);
+    if (isDesktop()) {
+      unawaited(
+        _session.fullscreen.initializeDesktop(windowManager.isFullScreen),
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _session.start();
+      if (mounted) _revealCurrentEpisode();
+    });
+  }
+
+  @override
+  void onWindowEnterFullScreen() =>
+      _session.fullscreen.onDesktopFullscreenChanged(true);
+
+  @override
+  void onWindowLeaveFullScreen() =>
+      _session.fullscreen.onDesktopFullscreenChanged(false);
+
+  void _syncDesktopPipHistory(bool isPip) {
+    if (!isDesktop() || !mounted) return;
+    if (isPip && _desktopPipEntry == null) {
+      _desktopPipEntry = LocalHistoryEntry(
+        impliesAppBarDismissal: false,
+        onRemove: () {
+          _desktopPipEntry = null;
+          if (_session.isPip) {
+            _session.isPip = false;
+            unawaited(PipUtils.exitDesktopPIPWindow());
+          }
+        },
+      );
+      ModalRoute.of(context)!.addLocalHistoryEntry(_desktopPipEntry!);
+    } else if (!isPip) {
+      _desktopPipEntry?.remove();
+      _desktopPipEntry = null;
     }
   }
 
-  Future<void> _exit() async {
-    if (_exiting) return;
-    _exiting = true;
-    ++_generation;
-    _resumeSession?.cancel();
-    _resolver.cancel();
-    await _saveProgress();
-    await _releaseAudioSession();
-    await _switches.run(_playback.stop);
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      await windowManager.setFullScreen(false);
-    }
-    if (mounted) {
-      setState(() {});
-      Navigator.of(context).pop();
-    }
+  void _revealCurrentEpisode() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _episodePanelKey.currentState?.revealCurrentEpisode();
+    });
   }
+
+  Future<void> _changeEpisode(
+    int episode, {
+    int currentRoad = 0,
+    int offset = 0,
+  }) async {
+    _sidePanelKey.currentState?.close();
+    await _session.changeEpisode(
+      episode,
+      currentRoad: currentRoad,
+      offset: offset,
+    );
+    if (mounted) _revealCurrentEpisode();
+  }
+
+  Future<void> _back() async {
+    if (_leaving) return;
+    if (PlatformEnvironmentService.isTelevision &&
+        !_statusVisible &&
+        _tvOverlay.hideIfVisible()) {
+      return;
+    }
+    if (isDesktop() && _session.isPip) {
+      _desktopPipEntry?.remove();
+      return;
+    }
+    if (_session.isFullscreen) {
+      await _session.fullscreen.setFullscreen(false);
+      return;
+    }
+    _leaving = true;
+    // 等待最终保存和串行释放完成后，才允许路由真正退出。
+    await _session.close();
+    if (!mounted) return;
+    setState(() => _canPop = true);
+    // PopScope 在下一帧才更新许可，不能在 setState 后立即再次返回。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await Navigator.of(context).maybePop();
+  }
+
+  void _pauseForTimedShutdown() => unawaited(_session.controls.pause());
 
   @override
   void dispose() {
-    unawaited(_releaseAudioSession());
+    if (isDesktop()) windowManager.removeListener(this);
+    _pipModeListener();
+    _desktopPipEntry?.remove();
+    _desktopPipEntry = null;
     _tvOverlay.dispose();
-    WidgetsBinding.instance.removeObserver(this);
-    _refreshTimer?.cancel();
-    _saveTimer?.cancel();
-    _loadTimeout?.cancel();
-    _completedSubscription?.cancel();
-    ++_generation;
-    _resumeSession?.cancel();
-    _resolver.cancel();
-    unawaited(_resolver.dispose());
-    unawaited(_switches.run(_playback.stop));
+    _statusRetryFocus.dispose();
+    _statusBackFocus.dispose();
+    _statusFocusScope.dispose();
+    _keyboardFocus.dispose();
+    _tabs.dispose();
+    TimedShutdownService().cancel();
+    if (!isDesktop()) {
+      unawaited(
+        ScreenBrightnessPlatform.instance.resetApplicationScreenBrightness(),
+      );
+    }
+    _session.dispose();
     super.dispose();
   }
 
-  String _time(Duration duration) {
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+  /// 按剧集地址标出已缓存状态；地址在同一作品内唯一，与番剧页的匹配方式一致。
+  Map<String, DownloadEpisode> _downloadsFor(DownloadTarget? target) {
+    if (target == null) return const {};
+    final record = _downloadController.getRecordSnapshot(
+      '${target.pluginName}_${target.recordId}',
+    );
+    if (record == null) return const {};
+    return {
+      for (final episode in record.episodes.values)
+        if (episode.episodePageUrl.isNotEmpty) episode.episodePageUrl: episode,
+    };
   }
 
-  Widget _surface() {
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white70, size: 40),
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () => _switchEpisode(_roadIndex, _episodeIndex),
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
-              ),
-              if (_resumePending)
-                TextButton(
-                  onPressed: () =>
-                      _switchEpisode(_roadIndex, _episodeIndex, resume: false),
-                  child: const Text('从头播放'),
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _session,
+    builder: (context, _) => Observer(
+      builder: (context) {
+        final fullscreen =
+            PlatformEnvironmentService.isTelevision || _session.isFullscreen;
+        final download = _session.downloadTarget;
+        final episodes = EpisodeSelectionPanel(
+          key: _episodePanelKey,
+          title: _session.title,
+          roads: _session.roadList,
+          selectedRoad: _session.selectedEpisode.road,
+          selectedEpisode: _session.selectedEpisode.episode,
+          downloads: _downloadsFor(download),
+          onEpisodeSelected: (episode, road) =>
+              unawaited(_changeEpisode(episode, currentRoad: road)),
+          // 来源被禁用或删除时无法解析剧集地址，不提供下载入口。
+          onDownload: download == null
+              ? null
+              : (road) => showAdaptiveBottomSheet<void>(
+                  context: context,
+                  builder: (context) =>
+                      DownloadEpisodeSheet(road: road, target: download),
                 ),
+          onDownloadEpisode: download == null
+              ? null
+              : (episode, road) {
+                  unawaited(enqueueVisibleEpisodes(
+                    target: download,
+                    road: road,
+                    episodeNumbers: [episode],
+                  ));
+                },
+          isPlaying: _session.controls.playback.playing,
+          disableAnimations: _disableAnimations,
+        );
+        final sourcePanel = PlayerSourceQualityPanel(
+          controller: _session.controls.quality,
+          sourceFeatures: _session,
+          embedded: true,
+        );
+        final panel = ColoredBox(
+          color: Theme.of(context).colorScheme.surface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PlayerContentTabs(
+                controller: _tabs,
+                onEpisodesSelected: _session.isMovie
+                    ? () {}
+                    : _revealCurrentEpisode,
+                showComments: false,
+                tabLabels: _session.isMovie
+                    ? const ['片源与清晰度']
+                    : const ['选集', '片源与清晰度'],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: _session.isMovie
+                      ? [sourcePanel]
+                      : [episodes, sourcePanel],
+                ),
+              ),
             ],
           ),
-        ),
-      );
-    }
-    if (_loading || _playback.videoController == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final video = Video(
-      key: ValueKey(_playback.videoController),
-      controller: _playback.videoController!,
-      controls: PlatformEnvironmentService.isTelevision
-          ? NoVideoControls
-          : AdaptiveVideoControls,
-      onEnterFullscreen: () async {
-        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-          await windowManager.setFullScreen(true);
-        }
+        );
+        return PopScope(
+          canPop: _canPop,
+          onPopInvokedWithResult: (didPop, result) {
+            if (!didPop) unawaited(_back());
+          },
+          child: VideoSystemBars(
+            fullscreen: fullscreen,
+            isPip: _session.isPip,
+            child: Scaffold(
+              body: VideoPageLayout(
+                fullscreen: fullscreen,
+                isPip: _session.isPip,
+                playerBuilder: (context, layout) => ColoredBox(
+                  color: Colors.black,
+                  child: Focus(
+                    focusNode: _keyboardFocus,
+                    autofocus: true,
+                    child: _player(layout),
+                  ),
+                ),
+                tabs: panel,
+                sidePanel: PlatformEnvironmentService.isTelevision
+                    ? null
+                    : VideoSidePanel(
+                        key: _sidePanelKey,
+                        fullscreen: _session.isFullscreen,
+                        disableAnimations: _disableAnimations,
+                        onOpened: _revealCurrentEpisode,
+                        onClosed: _keyboardFocus.requestFocus,
+                        child: panel,
+                      ),
+              ),
+            ),
+          ),
+        );
       },
-      onExitFullscreen: () async {
-        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-          await windowManager.setFullScreen(false);
-        }
-      },
-    );
-    if (!_resumePending) return video;
+    ),
+  );
+
+  Widget _player(VideoPlayerLayout layout) {
+    _scheduleTelevisionFocus();
+    final covered = PlatformEnvironmentService.isTelevision && _statusVisible;
     return Stack(
+      fit: StackFit.expand,
       children: [
-        Positioned.fill(child: AbsorbPointer(child: video)),
-        const Positioned(
-          left: 16,
-          bottom: 16,
-          child: Text('正在恢复观看进度…', style: TextStyle(color: Colors.white)),
+        // 状态层只接管焦点和语义；底层实例保持挂载，音频与时钟不重复绑定。
+        ExcludeFocus(
+          excluding: covered,
+          child: ExcludeSemantics(
+            excluding: covered,
+            child: PlayerItem(
+              playerController: _session.controls,
+              videoPageController: _session,
+              fillsWindow: layout.fillsWindow,
+              onToggleSidePanel: layout.hasSidePanel
+                  ? () => _sidePanelKey.currentState?.toggle()
+                  : null,
+              changeEpisode: _changeEpisode,
+              onBackPressed: () => unawaited(_back()),
+              keyboardFocus: _keyboardFocus,
+              pauseForTimedShutdown: _pauseForTimedShutdown,
+              disableAnimations: _disableAnimations,
+              tvOverlay: _tvOverlay,
+            ),
+          ),
         ),
+        if (_session.loading || _session.errorMessage != null)
+          _statusOverlay(layout),
+        if (_session.resumePending && _session.errorMessage == null)
+          const Positioned(
+            left: 16,
+            bottom: 76,
+            child: IgnorePointer(
+              child: Text('正在恢复观看进度…', style: TextStyle(color: Colors.white)),
+            ),
+          ),
       ],
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final controlsGeneration = _generation;
-    final hasRoads = _playlist.roads.isNotEmpty;
-    final episodeTitle = hasRoads && _road.episodes.isNotEmpty
-        ? _episode.title
-        : '';
-    return PopScope(
-      canPop: _exiting,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          if (PlatformEnvironmentService.isTelevision &&
-              _tvOverlay.hideIfVisible()) {
-            return;
-          }
-          unawaited(_exit());
-        }
-      },
-      child: Scaffold(
-        appBar: PlatformEnvironmentService.isTelevision
-            ? null
-            : AppBar(
-                leading: BackButton(onPressed: _exit),
-                title: Text(
-                  '${_media.title}${episodeTitle.isEmpty ? '' : ' · $episodeTitle'}',
-                ),
-                actions: [
-                  PopupMenuButton<double>(
-                    tooltip: '播放速度',
-                    initialValue: _speed,
-                    onSelected: (value) {
-                      setState(() => _speed = value);
-                      unawaited(_playback.setPlaybackSpeed(value));
-                    },
-                    itemBuilder: (_) => [
-                      for (final value in [0.75, 1.0, 1.25, 1.5, 2.0])
-                        PopupMenuItem(value: value, child: Text('${value}x')),
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Center(child: Text('${_speed}x')),
+  Widget _statusOverlay(VideoPlayerLayout layout) {
+    final overlay = ColoredBox(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 64, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_session.errorMessage != null) ...[
+                    MediaErrorWidget(
+                      title: '暂时无法播放',
+                      errMsg: _session.errorMessage!,
+                      icon: Icons.videocam_off_outlined,
                     ),
-                  ),
-                ],
-              ),
-        body: PlatformEnvironmentService.isTelevision
-            ? TvPlaybackControls(
-                controller: _tvOverlay,
-                title:
-                    '${_media.title}${episodeTitle.isEmpty ? '' : ' · $episodeTitle'}',
-                position: _position,
-                duration: _duration,
-                playing: _playback.playerPlaying,
-                loading:
-                    !_ready || _loading || _resumePending || _error != null,
-                rate: _speed,
-                onToggle: () async {
-                  await _playback.mediaPlayer?.playOrPause();
-                },
-                onPlay: () async {
-                  await _playback.mediaPlayer?.play();
-                },
-                onPause: () async {
-                  await _playback.mediaPlayer?.pause();
-                },
-                onSeek: (position) async {
-                  final player = _playback.mediaPlayer;
-                  if (!_ready ||
-                      _loading ||
-                      _resumePending ||
-                      _exiting ||
-                      player == null ||
-                      controlsGeneration != _generation ||
-                      _readyGeneration != controlsGeneration) {
-                    return;
-                  }
-                  if (!_playback.isCurrentPlayer(player)) return;
-                  await player.seek(position);
-                },
-                onRate: (value) async {
-                  setState(() => _speed = value);
-                  await _playback.setPlaybackSpeed(value);
-                },
-                onExit: () => unawaited(_exit()),
-                roads: [
-                  for (final road in _playlist.roads)
-                    TvPlaybackRoad(
-                      name: road.name,
-                      episodes: [
-                        for (final episode in road.episodes) episode.title,
-                      ],
-                    ),
-                ],
-                roadIndex: _roadIndex,
-                episodeIndex: _episodeIndex,
-                onEpisodeSelected: (road, episode) =>
-                    _switchEpisode(road, episode),
-                child: ColoredBox(color: Colors.black, child: _surface()),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 900;
-                  final surface = ColoredBox(
-                    color: Colors.black,
-                    child: _surface(),
-                  );
-                  final panel = _episodePanel();
-                  if (wide) {
-                    return Row(
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
                       children: [
-                        Expanded(child: surface),
-                        SizedBox(width: 280, child: panel),
+                        FilledButton.icon(
+                          focusNode: _statusRetryFocus,
+                          onPressed: () => unawaited(_session.retry()),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重试'),
+                        ),
+                        if (_session.sourceOptions.length > 1)
+                          OutlinedButton.icon(
+                            onPressed: () => unawaited(
+                              showPlayerQualitySheet(
+                                context,
+                                _session.controls.quality,
+                                sourceFeatures: _session,
+                              ),
+                            ),
+                            icon: const Icon(Icons.swap_horiz_rounded),
+                            label: const Text('切换片源'),
+                          ),
                       ],
-                    );
-                  }
-                  return Column(
-                    children: [
-                      AspectRatio(aspectRatio: 16 / 9, child: surface),
-                      Expanded(child: panel),
-                    ],
-                  );
-                },
+                    ),
+                    if (_session.resumePending)
+                      TextButton(
+                        onPressed: () =>
+                            unawaited(_session.retry(fromBeginning: true)),
+                        child: const Text('从头播放'),
+                      ),
+                  ] else ...[
+                    LoadingIndicator(
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '视频资源解析中，播放器加载中',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ],
               ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: EmbeddedNativeControlArea(
+              requireOffset: !_session.isFullscreen,
+              child: Row(
+                children: [
+                  IconButton(
+                    focusNode: _statusBackFocus,
+                    onPressed: () => unawaited(_back()),
+                    tooltip: '返回',
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  ),
+                  const Expanded(
+                    child: dtb.DragToMoveArea(child: SizedBox(height: 40)),
+                  ),
+                  // 紧凑竖屏的错误正文可滚动，顶栏始终保留不被裁切的重试入口。
+                  IconButton(
+                    focusNode: _session.errorMessage == null
+                        ? _statusRetryFocus
+                        : null,
+                    onPressed: () => unawaited(_session.retry()),
+                    tooltip: '重试',
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                  ),
+                  if (layout.hasSidePanel)
+                    IconButton(
+                      onPressed: () => _sidePanelKey.currentState?.toggle(),
+                      tooltip: '选集',
+                      icon: const Icon(
+                        Icons.menu_open_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
+    return PlatformEnvironmentService.isTelevision
+        ? FocusScope(node: _statusFocusScope, child: overlay)
+        : overlay;
   }
-
-  Widget _episodePanel() => ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      Text(_media.sourceName, style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      Text('${_time(_position)} / ${_time(_duration)}'),
-      const SizedBox(height: 12),
-      if (_playlist.roads.isNotEmpty)
-        DropdownButtonFormField<int>(
-          initialValue: _roadIndex,
-          decoration: const InputDecoration(
-            labelText: '播放线路',
-            border: OutlineInputBorder(),
-          ),
-          items: [
-            for (var i = 0; i < _playlist.roads.length; i++)
-              DropdownMenuItem(value: i, child: Text(_playlist.roads[i].name)),
-          ],
-          onChanged: (value) {
-            if (value == null) return;
-            final target = _playlist.roads[value];
-            final matched = target.episodes.indexWhere(
-              (episode) => episode.id == _episode.id,
-            );
-            unawaited(_switchEpisode(value, matched < 0 ? 0 : matched));
-          },
-        ),
-      const SizedBox(height: 18),
-      Text(
-        _playlist.season?.name ??
-            (_media.ref.kind == MediaKind.movie ? '正片 / 来源版本' : '来源剧集'),
-      ),
-      const SizedBox(height: 10),
-      if (_playlist.roads.isNotEmpty)
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (var i = 0; i < _road.episodes.length; i++)
-              ChoiceChip(
-                label: Text(_road.episodes[i].title),
-                selected: i == _episodeIndex,
-                onSelected: (_) => _switchEpisode(_roadIndex, i),
-              ),
-          ],
-        ),
-    ],
-  );
 }

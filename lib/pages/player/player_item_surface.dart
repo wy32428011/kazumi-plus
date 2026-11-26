@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:kazumi/pages/player/player_controller.dart';
+import 'package:kazumi/pages/player/player_controls_controller.dart';
 
 class PlayerItemSurface extends StatefulWidget {
   const PlayerItemSurface({
@@ -9,7 +9,7 @@ class PlayerItemSurface extends StatefulWidget {
     required this.playerController,
   });
 
-  final PlayerController playerController;
+  final PlayerControlsController playerController;
 
   @override
   State<PlayerItemSurface> createState() => _PlayerItemSurfaceState();
@@ -31,28 +31,30 @@ class _PlayerItemSurfaceState extends State<PlayerItemSurface> {
       }
 
       final aspectRatioMode = playerController.panel.aspectRatioMode;
+      final videoController = playerController.playback.videoController!;
       final video = Video(
-        controller: playerController.playback.videoController!,
+        key: ValueKey(videoController),
+        controller: videoController,
         controls: NoVideoControls,
         pauseUponEnteringBackgroundMode: false,
         fit: aspectRatioMode.fit,
         subtitleViewConfiguration: SubtitleViewConfiguration(
           style: TextStyle(
-            color: Colors.pink,
-            fontSize: 48.0,
+            color: Colors.white,
+            fontSize: 40.0,
             background: Paint()..color = Colors.transparent,
             decoration: TextDecoration.none,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
             shadows: const [
               Shadow(
                 offset: Offset(1.0, 1.0),
                 blurRadius: 3.0,
-                color: Color.fromARGB(255, 255, 255, 255),
+                color: Color.fromARGB(220, 0, 0, 0),
               ),
               Shadow(
                 offset: Offset(-1.0, -1.0),
                 blurRadius: 3.0,
-                color: Color.fromARGB(125, 255, 255, 255),
+                color: Color.fromARGB(180, 0, 0, 0),
               ),
             ],
           ),

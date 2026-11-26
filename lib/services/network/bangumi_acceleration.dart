@@ -5,14 +5,19 @@ enum BangumiAcceleration {
   ech,
   mirror;
 
-  static BangumiAcceleration get current => switch (GStorage.getSetting(
-    SettingsKeys.bangumiAcceleration,
-  )) {
-    'direct' => direct,
-    'ech' => ech,
-    'mirror' => mirror,
-    _ => GStorage.getSetting(SettingsKeys.enableBangumiProxy) ? mirror : direct,
-  };
+  static BangumiAcceleration get current {
+    try {
+      return switch (GStorage.getSetting(SettingsKeys.bangumiAcceleration)) {
+        'direct' => direct,
+        'ech' => ech,
+        'mirror' => mirror,
+        _ =>
+          GStorage.getSetting(SettingsKeys.enableBangumiProxy) ? mirror : direct,
+      };
+    } catch (_) {
+      return mirror;
+    }
+  }
 
   String get label => switch (this) {
     direct => '直连',

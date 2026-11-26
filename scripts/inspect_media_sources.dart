@@ -14,7 +14,7 @@ Future<void> main(List<String> arguments) async {
   await output.create(recursive: true);
   final sources = arguments.length > 1
       ? arguments.skip(1)
-      : ['subo', 'modu', 'guangsu'];
+      : ['haohua', 'xinlang', 'maoyan', 'modu', 'huya', 'jinying', 'ikun', 'guangsu', 'subo'];
   final results = await Future.wait(
     sources.map((source) async {
       try {
@@ -57,7 +57,7 @@ Future<Map<String, Object?>> inspectSource(
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
   final channels = <String, Object?>{};
   try {
-    for (final kind in ['tv', 'movie']) {
+    for (final kind in ['tv', 'movie', 'anime']) {
       final channel = config.channels[kind]!;
       final variables = <String, Object?>{
         'page': 1,

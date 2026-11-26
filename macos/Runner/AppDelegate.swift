@@ -69,6 +69,10 @@ class AppDelegate: FlutterAppDelegate {
                     result(FlutterMethodNotImplemented)
                     return }
                 self.setMenuEnabled(menu: menu, enable: enable)
+                if menu == "PlayerMenu", enable {
+                    // 当前播放内容没有弹幕能力时，系统菜单也隐藏该操作。
+                    self.setDanmakuMenuAvailable(args["danmakuAvailable"] as? Bool ?? true)
+                }
                 result(nil)
             default:
                 result(FlutterMethodNotImplemented)
@@ -231,6 +235,15 @@ class AppDelegate: FlutterAppDelegate {
     func setMenuEnabled(menu: String, enable: Bool) {
         if let menuItem = NSApp.mainMenu?.items.first(where: { $0.identifier?.rawValue == menu }) {
             menuItem.isEnabled = enable
+        }
+    }
+
+    private func setDanmakuMenuAvailable(_ available: Bool) {
+        guard let playerMenu = NSApp.mainMenu?.items.first(where: {
+            $0.identifier?.rawValue == "PlayerMenu"
+        })?.submenu else { return }
+        for item in playerMenu.items where item.action == #selector(menuToggleDanmaku(_:)) {
+            item.isHidden = !available
         }
     }
 }

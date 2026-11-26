@@ -117,10 +117,15 @@ class ApiRuleStrategy {
     if (method != 'GET' && method != 'POST') {
       throw ApiRuleFormatException('仅支持 GET/POST，当前为 $method');
     }
-    if (config.url.trim().isEmpty) {
+    final rawUrl = config.url.trim();
+    if (rawUrl.isEmpty) {
       throw const ApiRuleFormatException('API 请求 URL 不能为空');
     }
-    final url = _renderTemplate(config.url.trim(), variables, encode: true);
+    final url = _renderTemplate(
+      rawUrl,
+      variables,
+      encode: rawUrl != '@source',
+    );
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
       throw ApiRuleFormatException('API 请求 URL 无效: $url');
@@ -143,12 +148,17 @@ class ApiRuleStrategy {
     RestrictedJsonPath.validate(config.listPath);
     RestrictedJsonPath.validate(config.namePath);
     RestrictedJsonPath.validate(config.sourcePath);
+    final template = config.sourceTemplate;
+    if (template.isNotEmpty && !template.contains('@source')) {
+      throw const ApiRuleFormatException('详情页地址模板必须包含 @source');
+    }
   }
 
   RuleSearchParseResult parseSearch(String raw, ApiSearchConfig config) {
     validateSearchConfig(config);
     final document = decodeResponse(raw);
     final nodes = RestrictedJsonPath.read(document, config.listPath);
+    final template = config.sourceTemplate;
     final results = <SearchItem>[];
     final fragments = <String>[];
     final diagnostics = <String>[];
@@ -165,7 +175,11 @@ class ApiRuleStrategy {
           diagnostics.add('搜索节点 $index 缺少名称或来源，已跳过');
           continue;
         }
-        results.add(SearchItem(name: name, src: source));
+        // 普通替换，允许模板在字母后直接写 @source，例如 /GV@source。
+        final src = template.isEmpty
+            ? source
+            : template.replaceAll('@source', Uri.encodeComponent(source));
+        results.add(SearchItem(name: name, src: src));
         fragments.add(jsonEncode(node));
       } on ApiRuleFormatException {
         rethrow;

@@ -2,6 +2,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
+import 'package:kazumi/theme/kazumi_theme_tokens.dart';
+
+/// 10-Foot TV / 键盘无模糊锐利钨丝金焦点环色值。
+const Color kTvFocusRingColor = Color(0xFFF0C66B);
+
+/// 10-Foot TV 实线焦点框宽度（2.5dp 锐利边框，无模糊阴影）。
+const double kTvFocusBorderWidth = 2.5;
+
+/// Android TV 5% Overscan 安全边距（以 960x540 逻辑画布计：水平 48dp / 垂直 27dp）。
+const EdgeInsets kTvOverscanPadding = EdgeInsets.symmetric(
+  horizontal: 48,
+  vertical: 27,
+);
 
 /// 电视输入形态独立于内容频道；手机直接复用原有树与主题。
 class TvApplicationScope extends StatefulWidget {
@@ -63,20 +76,23 @@ class _TvApplicationScopeState extends State<TvApplicationScope> {
   Widget build(BuildContext context) {
     if (!PlatformEnvironmentService.isTelevision) return widget.child;
     final original = Theme.of(context);
-    final colors = original.brightness == Brightness.dark
-        ? original.colorScheme
-        : ColorScheme.fromSeed(
-            seedColor: original.colorScheme.primary,
-            brightness: Brightness.dark,
-          );
+    final baseTheme = original.brightness == Brightness.dark
+        ? original
+        : buildSilverSaltTheme(brightness: Brightness.dark);
+    final tokens = baseTheme.extension<KazumiThemeTokens>() ??
+        KazumiThemeTokens.dark;
+    final colors = baseTheme.colorScheme;
     final focusSide = WidgetStateProperty.resolveWith<BorderSide?>(
       (states) => states.contains(WidgetState.focused)
-          ? BorderSide(color: colors.primary, width: 3)
+          ? const BorderSide(
+              color: kTvFocusRingColor,
+              width: kTvFocusBorderWidth,
+            )
           : null,
     );
     final focusOverlay = WidgetStateProperty.resolveWith<Color?>(
       (states) => states.contains(WidgetState.focused)
-          ? colors.primary.withValues(alpha: .22)
+          ? kTvFocusRingColor.withValues(alpha: .16)
           : null,
     );
     final buttonStyle = ButtonStyle(
@@ -85,30 +101,30 @@ class _TvApplicationScopeState extends State<TvApplicationScope> {
       minimumSize: const WidgetStatePropertyAll(Size(52, 48)),
     );
     return Theme(
-      data: original.copyWith(
+      data: baseTheme.copyWith(
         brightness: Brightness.dark,
         colorScheme: colors,
-        scaffoldBackgroundColor: colors.surface,
-        canvasColor: colors.surface,
-        cardColor: colors.surfaceContainerLow,
-        cardTheme: original.cardTheme.copyWith(
-          color: colors.surfaceContainerLow,
+        scaffoldBackgroundColor: tokens.canvas,
+        canvasColor: tokens.canvas,
+        cardColor: tokens.surface1,
+        cardTheme: baseTheme.cardTheme.copyWith(
+          color: tokens.surface1,
         ),
-        appBarTheme: original.appBarTheme.copyWith(
-          backgroundColor: colors.surface,
-          foregroundColor: colors.onSurface,
+        appBarTheme: baseTheme.appBarTheme.copyWith(
+          backgroundColor: tokens.canvas,
+          foregroundColor: tokens.textPrimary,
         ),
-        dialogTheme: original.dialogTheme.copyWith(
-          backgroundColor: colors.surfaceContainerHigh,
+        dialogTheme: baseTheme.dialogTheme.copyWith(
+          backgroundColor: tokens.surface2,
         ),
-        popupMenuTheme: original.popupMenuTheme.copyWith(
-          color: colors.surfaceContainerHigh,
-          textStyle: TextStyle(color: colors.onSurface),
+        popupMenuTheme: baseTheme.popupMenuTheme.copyWith(
+          color: tokens.surface3,
+          textStyle: TextStyle(color: tokens.textPrimary),
         ),
-        focusColor: colors.primary.withValues(alpha: .26),
-        textTheme: original.textTheme.apply(
-          bodyColor: colors.onSurface,
-          displayColor: colors.onSurface,
+        focusColor: kTvFocusRingColor.withValues(alpha: .20),
+        textTheme: baseTheme.textTheme.apply(
+          bodyColor: tokens.textPrimary,
+          displayColor: tokens.textPrimary,
           fontSizeFactor: 1.08,
         ),
         filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
@@ -116,9 +132,9 @@ class _TvApplicationScopeState extends State<TvApplicationScope> {
         textButtonTheme: TextButtonThemeData(style: buttonStyle),
         iconButtonTheme: IconButtonThemeData(style: buttonStyle),
         listTileTheme: ListTileThemeData(
-          textColor: colors.onSurface,
-          iconColor: colors.onSurfaceVariant,
-          selectedTileColor: colors.primaryContainer,
+          textColor: tokens.textPrimary,
+          iconColor: tokens.textSecondary,
+          selectedTileColor: tokens.accentSoft,
         ),
       ),
       child: Shortcuts(
@@ -150,7 +166,7 @@ class _TvApplicationScopeState extends State<TvApplicationScope> {
 
 /// 给已有 Material 控件增加可见焦点框，不额外创建一个可停留的焦点。
 class TvFocusFrame extends StatefulWidget {
-  const TvFocusFrame({super.key, required this.child, this.radius = 14});
+  const TvFocusFrame({super.key, required this.child, this.radius = 12});
   final Widget child;
   final double radius;
 
@@ -173,10 +189,8 @@ class _TvFocusFrameState extends State<TvFocusFrame> {
         foregroundDecoration: BoxDecoration(
           borderRadius: BorderRadius.circular(widget.radius),
           border: Border.all(
-            color: _focused
-                ? Theme.of(context).colorScheme.primary
-                : Colors.transparent,
-            width: 3,
+            color: _focused ? kTvFocusRingColor : Colors.transparent,
+            width: kTvFocusBorderWidth,
           ),
         ),
         child: widget.child,
@@ -195,7 +209,7 @@ class TvAction extends StatefulWidget {
     this.autofocus = false,
     this.selected = false,
     this.label,
-    this.radius = 14,
+    this.radius = 12,
   });
   final Widget child;
   final FutureOr<void> Function()? onPressed;
@@ -236,7 +250,7 @@ class _TvActionState extends State<TvAction> {
   @override
   Widget build(BuildContext context) {
     if (!PlatformEnvironmentService.isTelevision) return widget.child;
-    final colors = Theme.of(context).colorScheme;
+    final tokens = KazumiThemeTokens.of(context);
     return Semantics(
       button: true,
       label: widget.label,
@@ -264,17 +278,17 @@ class _TvActionState extends State<TvAction> {
           duration: const Duration(milliseconds: 100),
           decoration: BoxDecoration(
             color: _focused
-                ? colors.primaryContainer
+                ? kTvFocusRingColor.withValues(alpha: 0.14)
                 : widget.selected
-                ? colors.surfaceContainerHighest
+                ? tokens.surface3
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(widget.radius),
           ),
           foregroundDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(widget.radius),
             border: Border.all(
-              color: _focused ? colors.primary : Colors.transparent,
-              width: 3,
+              color: _focused ? kTvFocusRingColor : Colors.transparent,
+              width: kTvFocusBorderWidth,
             ),
           ),
           child: ExcludeFocus(

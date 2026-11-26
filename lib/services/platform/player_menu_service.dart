@@ -24,6 +24,7 @@ class PlayerMenuService {
     await _appMenuChannel.invokeMethod('setMenuEnabled', {
       'menu': 'PlayerMenu',
       'enable': true,
+      'danmakuAvailable': actions.containsKey('toggledanmaku'),
     });
     _appMenuChannel.setMethodCallHandler((call) async {
       final action = actions[call.method];

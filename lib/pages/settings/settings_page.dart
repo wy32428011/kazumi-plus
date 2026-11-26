@@ -57,8 +57,14 @@ const List<_SettingsGroup> _settingsGroups = [
     title: '资源',
     categories: [
       _SettingsCategory(
+        label: '片源健康与智能选源',
+        description: '选源策略、实测画质与播中容灾',
+        icon: Icons.monitor_heart_rounded,
+        path: '/settings/source-health',
+      ),
+      _SettingsCategory(
         label: '规则管理',
-        description: '番剧资源规则',
+        description: '番剧与影视资源规则',
         icon: Icons.extension_rounded,
         path: '/settings/plugin',
       ),

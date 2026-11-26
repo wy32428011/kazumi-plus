@@ -23,6 +23,7 @@ import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/navigation.dart';
+import 'package:kazumi/services/media/source_health_repository.dart';
 import 'package:kazumi/services/media/source_media_library.dart';
 
 void main() async {
@@ -50,6 +51,7 @@ void main() async {
     await Hive.initFlutter(hivePath);
     await GStorage.init();
     await SourceMediaLibrary.instance.init();
+    await SourceHealthRepository.instance.init();
   } catch (e) {
     debugPrint('Storage initialization failed: $e');
 

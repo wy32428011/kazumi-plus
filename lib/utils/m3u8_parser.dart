@@ -56,6 +56,34 @@ class M3u8MasterPlaylist {
   M3u8Variant get bestVariant {
     return variants.reduce((a, b) => a.bandwidth > b.bandwidth ? a : b);
   }
+
+  /// 按清晰度偏好选择变体。quality 为 'lowest' 时取最低码率；为数字（如 '720'）时
+  /// 取不超过该高度的最高码率，都不满足时取可用的最低分辨率；
+  /// 其余情况（含缺少 RESOLUTION 声明）回退到 bestVariant。
+  M3u8Variant selectVariant(String quality) {
+    if (quality == 'lowest') {
+      return variants.reduce((a, b) => a.bandwidth < b.bandwidth ? a : b);
+    }
+    final maxHeight = int.tryParse(quality);
+    final withHeight = variants
+        .where((v) => _heightOf(v) != null)
+        .toList(growable: false);
+    if (maxHeight == null || withHeight.isEmpty) return bestVariant;
+
+    final withinLimit = withHeight
+        .where((v) => _heightOf(v)! <= maxHeight)
+        .toList();
+    if (withinLimit.isEmpty) {
+      return withHeight.reduce((a, b) => _heightOf(a)! < _heightOf(b)! ? a : b);
+    }
+    return withinLimit.reduce((a, b) => a.bandwidth > b.bandwidth ? a : b);
+  }
+
+  static int? _heightOf(M3u8Variant variant) {
+    final parts = variant.resolution?.split('x');
+    if (parts == null || parts.length != 2) return null;
+    return int.tryParse(parts[1]);
+  }
 }
 
 class M3u8MediaPlaylist {
@@ -80,21 +108,13 @@ class M3u8Parser {
     return M3u8Type.media;
   }
 
-  static String resolveUrl(String baseUrl, String relativeUrl) {
-    if (relativeUrl.startsWith('http://') ||
-        relativeUrl.startsWith('https://')) {
-      return relativeUrl;
-    }
-    final baseUri = Uri.parse(baseUrl);
-    if (relativeUrl.startsWith('/')) {
-      return '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}$relativeUrl';
-    }
-    final basePath = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
-    return '$basePath$relativeUrl';
-  }
+  static String resolveUrl(String baseUrl, String relativeUrl) =>
+      Uri.parse(baseUrl).resolve(relativeUrl.trim()).toString();
 
   static M3u8MasterPlaylist parseMasterPlaylist(
-      String content, String baseUrl) {
+    String content,
+    String baseUrl,
+  ) {
     final lines = content.split('\n').map((l) => l.trim()).toList();
     final variants = <M3u8Variant>[];
 
@@ -105,21 +125,32 @@ class M3u8Parser {
         int bandwidth = 0;
         String? resolution;
 
-        final bandwidthMatch = RegExp(r'BANDWIDTH=(\d+)').firstMatch(attrs);
+        final bandwidthMatch = RegExp(
+          r'(?:^|,)BANDWIDTH=(\d+)',
+        ).firstMatch(attrs);
         if (bandwidthMatch != null) {
           bandwidth = int.parse(bandwidthMatch.group(1)!);
         }
 
-        final resolutionMatch =
-            RegExp(r'RESOLUTION=([^\s,]+)').firstMatch(attrs);
+        final resolutionMatch = RegExp(
+          r'RESOLUTION=([^\s,]+)',
+        ).firstMatch(attrs);
         if (resolutionMatch != null) {
           resolution = resolutionMatch.group(1);
         }
 
-        if (i + 1 < lines.length && !lines[i + 1].startsWith('#')) {
-          final uri = resolveUrl(baseUrl, lines[i + 1]);
-          variants.add(M3u8Variant(
-              bandwidth: bandwidth, resolution: resolution, uri: uri));
+        for (var next = i + 1; next < lines.length; next++) {
+          final candidate = lines[next];
+          if (candidate.startsWith('#EXT')) break;
+          if (candidate.isEmpty || candidate.startsWith('#')) continue;
+          variants.add(
+            M3u8Variant(
+              bandwidth: bandwidth,
+              resolution: resolution,
+              uri: resolveUrl(baseUrl, candidate),
+            ),
+          );
+          break;
         }
       }
     }
@@ -142,8 +173,9 @@ class M3u8Parser {
       final line = lines[i];
 
       if (line.startsWith('#EXT-X-TARGETDURATION:')) {
-        targetDuration =
-            double.parse(line.substring('#EXT-X-TARGETDURATION:'.length));
+        targetDuration = double.parse(
+          line.substring('#EXT-X-TARGETDURATION:'.length),
+        );
       } else if (line == '#EXT-X-ENDLIST') {
         hasEndList = true;
       } else if (line == '#EXT-X-PLAYLIST-TYPE:VOD') {
@@ -159,12 +191,14 @@ class M3u8Parser {
         currentDuration = double.parse(durationStr);
       } else if (line.isNotEmpty && !line.startsWith('#')) {
         final uri = resolveUrl(baseUrl, line);
-        segments.add(M3u8Segment(
-          duration: currentDuration,
-          uri: uri,
-          discontinuityGroup: currentDiscontinuityGroup,
-          key: currentKey,
-        ));
+        segments.add(
+          M3u8Segment(
+            duration: currentDuration,
+            uri: uri,
+            discontinuityGroup: currentDiscontinuityGroup,
+            key: currentKey,
+          ),
+        );
         currentDuration = 0;
       }
     }
@@ -241,7 +275,8 @@ class M3u8Parser {
         } else {
           final localUri = keyUriToLocal[seg.key!.uri] ?? seg.key!.uri;
           final keySb = StringBuffer(
-              '#EXT-X-KEY:METHOD=${seg.key!.method},URI="$localUri"');
+            '#EXT-X-KEY:METHOD=${seg.key!.method},URI="$localUri"',
+          );
           if (seg.key!.iv != null) {
             keySb.write(',IV=${seg.key!.iv}');
           }
@@ -279,12 +314,14 @@ class M3u8Parser {
 
     for (final seg in segments) {
       if (!_isM3u8Url(seg.uri)) {
-        result.add(M3u8Segment(
-          duration: seg.duration,
-          uri: seg.uri,
-          discontinuityGroup: seg.discontinuityGroup + groupOffset,
-          key: seg.key,
-        ));
+        result.add(
+          M3u8Segment(
+            duration: seg.duration,
+            uri: seg.uri,
+            discontinuityGroup: seg.discontinuityGroup + groupOffset,
+            key: seg.key,
+          ),
+        );
         continue;
       }
 
@@ -309,24 +346,28 @@ class M3u8Parser {
         }
 
         for (final ns in resolved) {
-          result.add(M3u8Segment(
-            duration: ns.duration,
-            uri: ns.uri,
-            discontinuityGroup: ns.discontinuityGroup + nestedBase,
-            key: ns.key,
-          ));
+          result.add(
+            M3u8Segment(
+              duration: ns.duration,
+              uri: ns.uri,
+              discontinuityGroup: ns.discontinuityGroup + nestedBase,
+              key: ns.key,
+            ),
+          );
         }
 
         // 后续 segment 的 group 需要额外偏移，避免碰撞
         groupOffset += maxNestedGroup;
       } catch (e) {
         // 获取/解析失败，保留原始 segment
-        result.add(M3u8Segment(
-          duration: seg.duration,
-          uri: seg.uri,
-          discontinuityGroup: seg.discontinuityGroup + groupOffset,
-          key: seg.key,
-        ));
+        result.add(
+          M3u8Segment(
+            duration: seg.duration,
+            uri: seg.uri,
+            discontinuityGroup: seg.discontinuityGroup + groupOffset,
+            key: seg.key,
+          ),
+        );
       }
     }
 

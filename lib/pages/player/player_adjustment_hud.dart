@@ -78,13 +78,6 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
     return Icons.volume_up_rounded;
   }
 
-  Color _accent(ColorScheme colorScheme) {
-    return switch (_displayType) {
-      PlayerAdjustmentHudType.brightness => colorScheme.tertiaryContainer,
-      PlayerAdjustmentHudType.volume => colorScheme.primaryContainer,
-    };
-  }
-
   Color _container(ColorScheme colorScheme) {
     return switch (_displayType) {
       PlayerAdjustmentHudType.brightness => colorScheme.tertiary,
@@ -116,7 +109,6 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final accent = _accent(colorScheme);
     final container = _container(colorScheme);
     final onContainer = _onContainer(colorScheme);
     final surface = colorScheme.surfaceContainerHighest;
@@ -150,7 +142,7 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
             duration: duration,
             curve: Curves.easeOutBack,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
+              borderRadius: BorderRadius.circular(14),
               // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
               // native aborts when HUD saveLayers are drawn over video output.
               // See flutter/flutter#185506.
@@ -161,22 +153,8 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(
-                        alpha: widget.visible ? 0.24 : 0,
-                      ),
-                      blurRadius: 32,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -610,7 +588,6 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final accent = colorScheme.secondaryContainer;
     final container = colorScheme.secondary;
     final onContainer = colorScheme.onSecondary;
     final progressFill = colorScheme.secondaryContainer;
@@ -651,7 +628,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
             duration: duration,
             curve: Curves.easeOutBack,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
+              borderRadius: BorderRadius.circular(14),
               // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
               // native aborts when HUD saveLayers are drawn over video output.
               // See flutter/flutter#185506.
@@ -661,22 +638,8 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                 width: 248,
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(
-                        alpha: widget.visible ? 0.24 : 0,
-                      ),
-                      blurRadius: 32,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
                 ),
                 child: Stack(
                   children: [
@@ -867,7 +830,7 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
             duration: duration,
             curve: Curves.easeOutCubic,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
               // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
               // native aborts when HUD saveLayers are drawn over video output.
               // See flutter/flutter#185506.
@@ -878,15 +841,8 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

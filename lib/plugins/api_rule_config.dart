@@ -75,12 +75,17 @@ class ApiSearchConfig {
   String namePath;
   String sourcePath;
 
+  /// 用条目来源替换 `@source` 得到详情地址；为空时直接使用来源原值。
+  final String sourceTemplate;
+
   ApiSearchConfig({
     ApiRequestConfig? request,
     this.listPath = r'$.data[*]',
     this.namePath = r'$.name',
     this.sourcePath = r'$.url',
-  }) : request = request ?? ApiRequestConfig();
+    String sourceTemplate = '',
+  })  : request = request ?? ApiRequestConfig(),
+        sourceTemplate = sourceTemplate.trim();
 
   factory ApiSearchConfig.fromJson(Map<String, dynamic> json) {
     return ApiSearchConfig(
@@ -88,6 +93,7 @@ class ApiSearchConfig {
       listPath: json['listPath'] as String? ?? r'$.data[*]',
       namePath: json['namePath'] as String? ?? r'$.name',
       sourcePath: json['sourcePath'] as String? ?? r'$.url',
+      sourceTemplate: json['sourceTemplate'] as String? ?? '',
     );
   }
 
@@ -96,6 +102,7 @@ class ApiSearchConfig {
         'listPath': listPath,
         'namePath': namePath,
         'sourcePath': sourcePath,
+        if (sourceTemplate.isNotEmpty) 'sourceTemplate': sourceTemplate,
       };
 }
 

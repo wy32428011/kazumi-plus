@@ -179,7 +179,9 @@ class BangumiApi {
             [100, 0]),
         data: params,
       );
-      final jsonList = jsonData['data'];
+      final dynamic dataField =
+          jsonData is Map ? jsonData['data'] : (jsonData is List ? jsonData : null);
+      final jsonList = dataField is List ? dataField : const [];
       for (dynamic jsonItem in jsonList) {
         if (jsonItem is Map<String, dynamic>) {
           bangumiList.add(BangumiItem.fromJson(jsonItem));
@@ -334,12 +336,14 @@ class BangumiApi {
             [limit, offset]),
         data: params,
       );
-      final jsonList = jsonData['data'];
+      final dynamic dataField =
+          jsonData is Map ? jsonData['data'] : (jsonData is List ? jsonData : null);
+      final jsonList = dataField is List ? dataField : const [];
       for (dynamic jsonItem in jsonList) {
         if (jsonItem is Map<String, dynamic>) {
           try {
             BangumiItem bangumiItem = BangumiItem.fromJson(jsonItem);
-            if (bangumiItem.nameCn != '') {
+            if (bangumiItem.nameCn.isNotEmpty || bangumiItem.name.isNotEmpty) {
               bangumiList.add(bangumiItem);
             }
           } catch (e) {

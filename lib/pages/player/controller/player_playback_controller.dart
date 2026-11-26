@@ -12,7 +12,9 @@ import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/proxy_utils.dart';
 import 'package:kazumi/services/network/system_proxy_service.dart';
+import 'package:kazumi/services/player/hls_proxy_service.dart';
 import 'package:kazumi/services/player/playback_cache_policy.dart';
+import 'package:kazumi/services/player/playback_quality.dart';
 import 'package:kazumi/services/player/player_error_mapper.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/video_source_format.dart';
@@ -26,13 +28,36 @@ import 'package:kazumi/services/platform/platform_environment_service.dart';
 
 part 'player_playback_controller.g.dart';
 
+/// 构造 `PlayerConfiguration`，统一启用 mpv/libass 字幕渲染并在 Android 下绑定随包字体。
+/// `mediacodec_embed` 不走 mpv GPU 字幕管线，回退到 Flutter `SubtitleView`。
+PlayerConfiguration buildMediaPlayerConfiguration({
+  required int bufferSize,
+  required MPVLogLevel logLevel,
+  required bool adBlocker,
+  required bool isAndroid,
+  String? videoRenderer,
+}) {
+  final useLibass = videoRenderer != 'mediacodec_embed';
+  return PlayerConfiguration(
+    bufferSize: bufferSize,
+    osc: false,
+    logLevel: logLevel,
+    adBlocker: adBlocker,
+    libass: useLibass,
+    libassAndroidFont:
+        useLibass && isAndroid ? 'assets/fonts/MiSans-Regular.ttf' : null,
+    libassAndroidFontName: useLibass && isAndroid ? 'MiSans' : null,
+  );
+}
+
 class PlayerPlaybackController = _PlayerPlaybackController
     with _$PlayerPlaybackController;
 
 final class _OwnedPlayer {
-  _OwnedPlayer(this.player);
+  _OwnedPlayer(this.player, {this.hlsProxySessionId});
 
   final Player player;
+  final String? hlsProxySessionId;
   Future<void>? _disposeFuture;
 
   Future<void> dispose() {
@@ -40,6 +65,9 @@ final class _OwnedPlayer {
   }
 
   Future<void> _dispose() async {
+    if (hlsProxySessionId != null) {
+      HlsProxyService.instance.closeSession(hlsProxySessionId);
+    }
     try {
       await player.dispose();
     } catch (error, stackTrace) {
@@ -70,6 +98,13 @@ abstract class _PlayerPlaybackController with Store {
   late final PlaybackCachePolicy cachePolicy = PlaybackCachePolicy(
     isLocalPlayback: isLocalPlayback,
     currentPlayer: () => mediaPlayer,
+    isPrefetchSuspended: () => _prefetchSuspendWanted,
+    onConstrainedChanged: (constrained) {
+      HlsProxyService.instance.setConstrained(
+        _ownedPlayer?.hlsProxySessionId,
+        constrained,
+      );
+    },
   );
 
   _OwnedPlayer? _ownedPlayer;
@@ -78,6 +113,29 @@ abstract class _PlayerPlaybackController with Store {
 
   final AsyncSerialQueue _prefetchWrites = AsyncSerialQueue();
   bool _prefetchSuspendWanted = false;
+
+  static const String _defaultNetworkTimeout = '20';
+
+  String get _streamBufferSize {
+    if (Platform.isAndroid || Platform.isIOS) {
+      return cachePolicy.isConstrained ? '262144' : '524288'; // 256KiB / 512KiB
+    }
+    return '1048576'; // 1MiB (桌面端)
+  }
+
+  HlsProxyFinder? _buildProxyFinder() {
+    final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
+    if (proxyEnable) {
+      final String proxyUrl = GStorage.getSetting(SettingsKeys.proxyUrl);
+      final parsed = ProxyUtils.parseProxyUrl(proxyUrl);
+      if (parsed != null) {
+        return (_) => 'PROXY ${parsed.$1}:${parsed.$2}';
+      }
+    } else if (SystemProxyService.isActive) {
+      return SystemProxyService.findProxy;
+    }
+    return null;
+  }
 
   bool hAenable = true;
   late String hardwareDecoder;
@@ -238,34 +296,19 @@ abstract class _PlayerPlaybackController with Store {
   /// demuxer then burns through ffmpeg's reconnect/segment retries and marks
   /// the stream EOF, leaving playback permanently stuck once foregrounded.
   /// Suspending zeroes the readahead window so no new requests are issued
-  /// while buffered data stays available; restore values are mpv defaults,
-  /// which media_kit leaves untouched. Writes are serialized and apply the
-  /// latest requested state, so rapid lifecycle flips cannot reorder.
+  /// while buffered data stays available. Restoration uses the current cache
+  /// policy, including network and low-memory settings. The policy serializes
+  /// writes so lifecycle and settings changes share the same ordering.
   Future<void> setPrefetchSuspended(bool suspended) async {
     if (!Platform.isAndroid) {
       return;
     }
     _prefetchSuspendWanted = suspended;
-    await _prefetchWrites.run(() async {
-      final wanted = _prefetchSuspendWanted;
-      final player = mediaPlayer;
-      if (player == null) {
-        return;
-      }
-      try {
-        final pp = player.platform as NativePlayer;
-        await pp.setProperty('cache-secs', wanted ? '0' : '36000');
-        if (!isCurrentPlayer(player)) {
-          return;
-        }
-        await pp.setProperty('demuxer-readahead-secs', wanted ? '0' : '1');
-      } catch (e) {
-        KazumiLogger().w(
-          'PlayerController: failed to ${wanted ? 'suspend' : 'resume'} demuxer prefetch',
-          error: e,
-        );
-      }
-    });
+    HlsProxyService.instance.setPrefetchSuspended(
+      _ownedPlayer?.hlsProxySessionId,
+      suspended,
+    );
+    await _prefetchWrites.run(cachePolicy.apply);
   }
 
   Future<Player?> createVideoController(
@@ -276,6 +319,10 @@ abstract class _PlayerPlaybackController with Store {
     VideoSourceFormat videoSourceFormat = VideoSourceFormat.auto,
     void Function(String message)? onPlaybackError,
     bool honorPlatformDecoderFallback = false,
+    HlsPreFetchedSeed? hlsPreFetchedSeed,
+    bool failoverAware = false,
+    void Function(HlsProxySegmentFailure failure)? onPrioritySegmentFailure,
+    void Function(String cdnGroup)? onCdnGroupResolved,
   }) async {
     startOffset = offset;
     superResolutionMode = SuperResolutionMode.fromStorageValue(
@@ -292,15 +339,86 @@ abstract class _PlayerPlaybackController with Store {
     if (!canInstall()) {
       return null;
     }
+
+    final rawVideoUrl = videoUrl();
+    final isHls =
+        videoSourceFormat == VideoSourceFormat.hls ||
+        Uri.tryParse(rawVideoUrl)?.path.toLowerCase().endsWith('.m3u8') == true;
+
+    HlsProxyPreparedSession? preparedHls;
+    if (!isLocalPlayback() && isHls) {
+      preparedHls = await HlsProxyService.instance.prepareSession(
+        url: rawVideoUrl,
+        headers: httpHeaders,
+        adBlockerEnabled: adBlockerEnabled,
+        startOffsetSeconds: offset,
+        constrained: cachePolicy.isConstrained,
+        prefetchSuspended: _prefetchSuspendWanted,
+        findProxy: _buildProxyFinder(),
+        preFetchedSeed: hlsPreFetchedSeed,
+        failoverAware: failoverAware,
+        onPrioritySegmentFailure: onPrioritySegmentFailure,
+        onCdnGroupResolved: onCdnGroupResolved,
+      );
+      if (!canInstall()) {
+        HlsProxyService.instance.closeSession(preparedHls?.sessionId);
+        return null;
+      }
+    }
+
+    final bool usingLocalHlsProxy = preparedHls != null;
+    final String effectiveVideoUrl = usingLocalHlsProxy
+        ? preparedHls.localPlaylistUrl
+        : rawVideoUrl;
+    final Map<String, String> effectiveHeaders = usingLocalHlsProxy
+        ? const <String, String>{}
+        : httpHeaders;
+    final bool effectiveAdBlocker =
+        adBlockerEnabled && !(preparedHls?.adFilteredByProxy ?? false);
+
+    String? videoRenderer;
+    if (Platform.isAndroid) {
+      final String androidVideoRenderer = GStorage.getSetting(
+        SettingsKeys.androidVideoRenderer,
+      );
+
+      if (androidVideoRenderer == 'auto') {
+        // Android 14 及以上使用基于 Vulkan 的 MPV GPU-NEXT 视频输出，着色器性能更好
+        // GPU-NEXT 需要 Vulkan 1.2 支持
+        // 避免 Android 13 及以下设备上部分机型 Vulkan 支持不佳导致的黑屏问题
+        final int androidSdkVersion =
+            await PlatformEnvironmentService.getAndroidSdkVersion();
+        if (!canInstall()) {
+          HlsProxyService.instance.closeSession(preparedHls?.sessionId);
+          return null;
+        }
+        if (androidSdkVersion >= 34) {
+          videoRenderer = 'gpu-next';
+        } else {
+          videoRenderer = 'gpu';
+        }
+      } else {
+        videoRenderer = androidVideoRenderer;
+      }
+    }
+
+    if (videoRenderer == 'mediacodec_embed') {
+      hAenable = true;
+      hardwareDecoder = 'mediacodec';
+      superResolutionMode = SuperResolutionMode.off;
+    }
+
     final candidate = _OwnedPlayer(
       Player(
-        configuration: PlayerConfiguration(
+        configuration: buildMediaPlayerConfiguration(
           bufferSize: cachePolicy.bufferSize,
-          osc: false,
           logLevel: MPVLogLevel.values[debug.playerLogLevel],
-          adBlocker: adBlockerEnabled,
+          adBlocker: effectiveAdBlocker,
+          isAndroid: Platform.isAndroid,
+          videoRenderer: videoRenderer,
         ),
       ),
+      hlsProxySessionId: preparedHls?.sessionId,
     );
     final player = candidate.player;
     if (!canInstall()) {
@@ -322,10 +440,8 @@ abstract class _PlayerPlaybackController with Store {
       }
 
       var pp = player.platform as NativePlayer;
-      // media-kit 默认启用硬盘作为双重缓存，这可以维持大缓存的前提下减轻内存压力
-      // media-kit 内部硬盘缓存目录按照 Linux 配置，这导致该功能在其他平台上被损坏
-      // 该设置可以在所有平台上正确启用双重缓存
-      await pp.setProperty("demuxer-cache-dir", await getPlayerTempPath());
+      // 缓存上限已收紧至 64/256 MiB，使用纯内存缓存可避免低速闪存或杀软扫描临时目录造成的 I/O 抖动。
+      await pp.setProperty("cache-on-disk", "no");
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);
       }
@@ -333,6 +449,48 @@ abstract class _PlayerPlaybackController with Store {
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);
       }
+
+      // 保持适中的底层流读取缓冲区（256KiB-1MiB），避免过大导致 Seek 与起播丢弃重读延迟。
+      await pp.setProperty("stream-buffer-size", _streamBufferSize);
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+
+      // 覆盖 media_kit 默认过短的 5 秒硬编码超时，避免弱网瞬时抖动、跨域 CDN 及代理切换引发断流
+      await pp.setProperty("network-timeout", _defaultNetworkTimeout);
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+
+      // 起播/Seek 先预热短缓冲再出画，卡顿后恢复阈值控制在 3 秒以平衡流畅度与等待时长。
+      await pp.setProperty("cache-pause", "yes");
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+      await pp.setProperty("cache-pause-wait", "3");
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+      await pp.setProperty("cache-pause-initial", "yes");
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+
+      // 关闭解复用滞后休眠，避免 CDN 连接空闲断链或 TCP 拥塞窗口回落导致二次卡顿。
+      await pp.setProperty("demuxer-hysteresis-secs", "0");
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+
+      // 配置流协议层断流自动重连与 TCP 无延迟，增强直连流媒体网络鲁棒性
+      await pp.setProperty(
+        "stream-lavf-o",
+        "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5,reconnect_on_network_error=1,reconnect_on_http_error=429,5xx,tcp_nodelay=1",
+      );
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+
       await pp.setProperty("af", "scaletempo2=max-speed=8");
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);
@@ -352,26 +510,37 @@ abstract class _PlayerPlaybackController with Store {
         }
       }
 
-      final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
-      if (proxyEnable) {
-        final String proxyUrl = GStorage.getSetting(SettingsKeys.proxyUrl);
-        final formattedProxy = ProxyUtils.getFormattedProxyUrl(proxyUrl);
-        if (formattedProxy != null) {
-          await pp.setProperty("http-proxy", formattedProxy);
-          if (!isCurrentPlayer(player)) {
-            return await _discardIfNotCurrent(candidate);
+      // 使用本地 HLS 代理时，由代理自身走上游 HTTP/系统代理，mpv 直连 127.0.0.1。
+      if (!usingLocalHlsProxy) {
+        final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
+        if (proxyEnable) {
+          final String proxyUrl = GStorage.getSetting(SettingsKeys.proxyUrl);
+          final formattedProxy = ProxyUtils.getFormattedProxyUrl(proxyUrl);
+          if (formattedProxy != null) {
+            await pp.setProperty("http-proxy", formattedProxy);
+            if (!isCurrentPlayer(player)) {
+              return await _discardIfNotCurrent(candidate);
+            }
+            KazumiLogger().i('Player: HTTP 代理设置成功 $formattedProxy');
           }
-          KazumiLogger().i('Player: HTTP 代理设置成功 $formattedProxy');
-        }
-      } else if (SystemProxyService.isActive) {
-        final proxy = SystemProxyService.proxyFor('https');
-        if (proxy != null) {
-          await pp.setProperty("http-proxy", 'http://${proxy.$1}:${proxy.$2}');
-          if (!isCurrentPlayer(player)) {
-            return await _discardIfNotCurrent(candidate);
+        } else if (SystemProxyService.isActive) {
+          final proxy = SystemProxyService.proxyFor('https');
+          if (proxy != null) {
+            await pp.setProperty("http-proxy", 'http://${proxy.$1}:${proxy.$2}');
+            if (!isCurrentPlayer(player)) {
+              return await _discardIfNotCurrent(candidate);
+            }
+            KazumiLogger().i('Player: 跟随系统代理 http://${proxy.$1}:${proxy.$2}');
           }
-          KazumiLogger().i('Player: 跟随系统代理 http://${proxy.$1}:${proxy.$2}');
         }
+      }
+
+      await pp.setProperty(
+        'slang',
+        'zh,chs,sc,zh-Hans,zh-CN,chi,zho,cht,tc,zh-Hant,zh-TW,zh-HK',
+      );
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
       }
 
       await player.setAudioTrack(AudioTrack.auto());
@@ -379,35 +548,9 @@ abstract class _PlayerPlaybackController with Store {
         return await _discardIfNotCurrent(candidate);
       }
 
-      String? videoRenderer;
-      if (Platform.isAndroid) {
-        final String androidVideoRenderer = GStorage.getSetting(
-          SettingsKeys.androidVideoRenderer,
-        );
-
-        if (androidVideoRenderer == 'auto') {
-          // Android 14 及以上使用基于 Vulkan 的 MPV GPU-NEXT 视频输出，着色器性能更好
-          // GPU-NEXT 需要 Vulkan 1.2 支持
-          // 避免 Android 13 及以下设备上部分机型 Vulkan 支持不佳导致的黑屏问题
-          final int androidSdkVersion =
-              await PlatformEnvironmentService.getAndroidSdkVersion();
-          if (!isCurrentPlayer(player)) {
-            return await _discardIfNotCurrent(candidate);
-          }
-          if (androidSdkVersion >= 34) {
-            videoRenderer = 'gpu-next';
-          } else {
-            videoRenderer = 'gpu';
-          }
-        } else {
-          videoRenderer = androidVideoRenderer;
-        }
-      }
-
-      if (videoRenderer == 'mediacodec_embed') {
-        hAenable = true;
-        hardwareDecoder = 'mediacodec';
-        superResolutionMode = SuperResolutionMode.off;
+      await player.setSubtitleTrack(SubtitleTrack.auto());
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
       }
 
       // 影视的默认自动解码交由平台选择，使上游模拟器兼容分支生效。
@@ -474,8 +617,8 @@ abstract class _PlayerPlaybackController with Store {
         }
       }
 
-      if (videoSourceFormat == VideoSourceFormat.hls) {
-        await pp.setProperty('demuxer-lavf-format', 'hls');
+      if (isHls) {
+        await configureHlsPlayback(pp, adBlockerEnabled: effectiveAdBlocker);
         if (!isCurrentPlayer(player)) {
           return await _discardIfNotCurrent(candidate);
         }
@@ -483,9 +626,9 @@ abstract class _PlayerPlaybackController with Store {
 
       await player.open(
         Media(
-          videoUrl(),
+          effectiveVideoUrl,
           start: Duration(seconds: offset),
-          httpHeaders: httpHeaders,
+          httpHeaders: effectiveHeaders,
         ),
         play: autoPlay,
       );
@@ -546,6 +689,8 @@ abstract class _PlayerPlaybackController with Store {
           await pp.command(['change-list', 'glsl-shaders', 'clr', '']);
           break;
       }
+      // 命令等待期间可能切集，旧播放器不得覆盖新会话的超分状态。
+      if (!isCurrentPlayer(currentPlayer)) return;
       superResolutionMode = mode;
     } catch (e) {
       KazumiLogger().w('PlayerController: failed to set shader', error: e);

@@ -2,10 +2,11 @@
   "api": "8",
   "type": "movie",
   "name": "光速影视",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "ruleId": "kazumi-plus.guangsu",
   "plusSchemaVersion": 1,
   "supportedMediaTypes": [
+    "anime",
     "tv",
     "movie"
   ],
@@ -161,6 +162,108 @@
           "23"
         ],
         "defaultCategoryId": "13",
+        "categories": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://api.guangsuapi.com/api.php/provide/vod/from/gsm3u8/",
+            "query": {
+              "ac": "list"
+            }
+          },
+          "listPath": "$.class[*]",
+          "fields": {
+            "id": "$.type_id",
+            "name": "$.type_name"
+          }
+        },
+        "discover": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://api.guangsuapi.com/api.php/provide/vod/from/gsm3u8/",
+            "query": {
+              "ac": "videolist",
+              "t": "@categoryId",
+              "pg": "@page"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score"
+          },
+          "totalPagesPath": "$.pagecount"
+        },
+        "search": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://api.guangsuapi.com/api.php/provide/vod/from/gsm3u8/",
+            "query": {
+              "ac": "videolist",
+              "wd": "@keyword",
+              "pg": "@page"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score"
+          },
+          "totalPagesPath": "$.pagecount"
+        },
+        "detail": {
+          "mode": "api",
+          "request": {
+            "method": "GET",
+            "url": "https://api.guangsuapi.com/api.php/provide/vod/from/gsm3u8/",
+            "query": {
+              "ac": "videolist",
+              "ids": "@source"
+            }
+          },
+          "listPath": "$.list[*]",
+          "fields": {
+            "id": "$.vod_id",
+            "title": "$.vod_name",
+            "source": "$.vod_id",
+            "poster": "$.vod_pic",
+            "categoryId": "$.type_id",
+            "year": "$.vod_year",
+            "region": "$.vod_area",
+            "status": "$.vod_remarks",
+            "rating": "$.vod_score",
+            "description": "$.vod_content",
+            "cast": "$.vod_actor",
+            "genres": "$.vod_class",
+            "aliases": "$.vod_sub"
+          }
+        }
+      },
+      "anime": {
+        "categoryIds": [
+          "4",
+          "20",
+          "41",
+          "42",
+          "43"
+        ],
+        "defaultCategoryId": "42",
         "categories": {
           "mode": "api",
           "request": {

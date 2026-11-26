@@ -1,5 +1,6 @@
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/modules/media/media_models.dart';
+import 'package:kazumi/modules/media/work_cluster_models.dart';
 import 'package:kazumi/pages/media/source_browse_page.dart';
 import 'package:kazumi/pages/media/source_search_page.dart';
 import 'package:kazumi/pages/media/source_detail_page.dart';
@@ -23,11 +24,17 @@ final mediaModule = createModule(
       ..route(
         '/detail',
         child: (context, state) {
-          final media = state.arguments;
-          if (media is! MediaSummary || media.ref.isAnime) {
-            return const RouteErrorPage(message: '影视详情参数无效，请重新打开作品。');
+          final arg = state.arguments;
+          if (arg is WorkCluster && arg.kind != MediaKind.anime) {
+            return SourceDetailPage(
+              media: arg.toPrimarySummary(),
+              initialCluster: arg,
+            );
           }
-          return SourceDetailPage(media: media);
+          if (arg is MediaSummary && !arg.ref.isAnime) {
+            return SourceDetailPage(media: arg);
+          }
+          return const RouteErrorPage(message: '影视详情参数无效，请重新打开作品。');
         },
       )
       ..route(
