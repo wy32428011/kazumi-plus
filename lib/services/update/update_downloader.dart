@@ -7,6 +7,36 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/utils/crypto.dart';
 
+final RegExp _sha256LinePattern = RegExp(
+  r'^([a-fA-F0-9]{64})\s+\*?(.+?)\s*$',
+);
+
+/// 解析 `SHA256SUMS.txt`（支持 `sha256  filename` 和 `sha256 *filename` 格式）。
+Map<String, String> parseSha256Sums(String content) {
+  final result = <String, String>{};
+  for (final rawLine in content.split(RegExp(r'\r?\n'))) {
+    final line = rawLine.trim();
+    if (line.isEmpty || line.startsWith('#')) continue;
+    final match = _sha256LinePattern.firstMatch(line);
+    if (match == null) continue;
+    final hash = match.group(1)!.toLowerCase();
+    var name = match.group(2)!.trim();
+    if (name.startsWith('./')) {
+      name = name.substring(2);
+    }
+    if (name.isEmpty) continue;
+    result[name.toLowerCase()] = hash;
+  }
+  return result;
+}
+
+/// 从 `SHA256SUMS.txt` 内容中按文件名（大小写不敏感）查找 64 位 SHA256。
+String findSha256InSums(String content, String fileName) {
+  final key = fileName.trim().toLowerCase();
+  if (key.isEmpty) return '';
+  return parseSha256Sums(content)[key] ?? '';
+}
+
 String getUpdateDownloadUrlFromAsset(
     Map<String, dynamic>? asset, UpdateDownloadSource source) {
   final url = asset?[switch (source) {
@@ -83,6 +113,12 @@ String getUpdateDownloadErrorMessage(Object error) {
   }
   if (error is UpdateIntegrityException) {
     return '文件完整性验证失败，可能是网络传输错误';
+  }
+  if (error is ArgumentError) {
+    final message = error.message?.toString().trim() ?? '';
+    if (message.isNotEmpty) {
+      return message;
+    }
   }
   final networkType =
       causes.whereType<NetworkException>().firstOrNull?.type;

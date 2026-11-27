@@ -477,6 +477,79 @@ void main() {
       );
       expect(maxConcurrent, lessThanOrEqualTo(2));
     });
+
+    test('re-entrant run calls on the same guard do not deadlock when slots are saturated', () async {
+      final guard = SourceTrafficGuard(
+        hostMinInterval: Duration.zero,
+        maxPerHostConcurrency: 2,
+        defaultGlobalConcurrency: 2,
+        constrainedGlobalConcurrency: 2,
+        isConstrainedResolver: () => false,
+      );
+
+      final results = await Future.wait(
+        List.generate(6, (i) {
+          final url = 'https://source$i.example.com/api';
+          return guard.run<String>(
+            url: url,
+            deduplicate: true,
+            action: (_) => guard.run<String>(
+              url: '$url/inner',
+              deduplicate: true,
+              action: (_) async {
+                await Future<void>.delayed(const Duration(milliseconds: 10));
+                return 'ok-$i';
+              },
+            ),
+          );
+        }),
+      ).timeout(const Duration(seconds: 2));
+
+      expect(results, List.generate(6, (i) => 'ok-$i'));
+      expect(guard.activeGlobalRequests, 0);
+    });
+
+    test('re-entrant run bypasses queued in-flight deduplication to prevent deadlock', () async {
+      final guard = SourceTrafficGuard(
+        hostMinInterval: Duration.zero,
+        maxPerHostConcurrency: 2,
+        defaultGlobalConcurrency: 1,
+        constrainedGlobalConcurrency: 1,
+        isConstrainedResolver: () => false,
+      );
+
+      final outerStarted = Completer<void>();
+      final queuedStarted = Completer<void>();
+
+      final outer = guard.run<String>(
+        url: 'https://outer.example.com/start',
+        deduplicate: false,
+        action: (_) async {
+          outerStarted.complete();
+          await queuedStarted.future;
+          // 此时已有外部调用排队等待相同 key，重入调用必须绕过单飞等待直接执行
+          return guard.run<String>(
+            url: 'https://shared.example.com/vod',
+            deduplicate: true,
+            action: (_) async => 'reentrant-ok',
+          );
+        },
+      );
+
+      await outerStarted.future;
+      final queued = guard.run<String>(
+        url: 'https://shared.example.com/vod',
+        deduplicate: true,
+        action: (_) async => 'queued-ok',
+      );
+      queuedStarted.complete();
+
+      final both = await Future.wait([outer, queued]).timeout(
+        const Duration(seconds: 2),
+      );
+      expect(both, ['reentrant-ok', 'queued-ok']);
+      expect(guard.activeGlobalRequests, 0);
+    });
   });
 }
 

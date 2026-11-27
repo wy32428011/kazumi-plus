@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +14,7 @@ import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
 import 'package:kazumi/pages/video/video_playback_args.dart';
+import 'package:kazumi/plugins/api_rule_config.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/repositories/collect_crud_repository.dart';
@@ -19,6 +23,7 @@ import 'package:kazumi/services/media/source_scoring_engine.dart';
 import 'package:kazumi/services/media/source_traffic_guard.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/services/plugin/plugin_search_service.dart';
+import 'package:kazumi/services/plugin/rule_engine.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart';
 import 'package:kazumi/television/tv_focus.dart';
 import 'package:kazumi/television/tv_playback_controls.dart';
@@ -103,6 +108,86 @@ class _StubAnimePlugin extends Plugin {
   }
 }
 
+class _GuardedRuleExecutor implements RuleRequestExecutor {
+  _GuardedRuleExecutor({
+    required this.guard,
+    required this.responder,
+  });
+
+  final SourceTrafficGuard guard;
+  final Future<String> Function(
+    PreparedRuleRequest request,
+    RuleExecutionConfig config,
+    CancelToken cancelToken,
+  ) responder;
+
+  @override
+  Future<String> execute(
+    PreparedRuleRequest request,
+    RuleExecutionConfig config, {
+    CancelToken? cancelToken,
+  }) {
+    return guard.run<String>(
+      url: request.url,
+      method: request.method,
+      query: request.query,
+      cancelToken: cancelToken,
+      deduplicate: request.method == 'GET',
+      action: (innerToken) => responder(request, config, innerToken),
+    );
+  }
+}
+
+class _RuleEngineBackedAnimePlugin extends Plugin {
+  _RuleEngineBackedAnimePlugin({
+    required super.name,
+    required super.ruleId,
+    required super.baseUrl,
+    required RuleEngine engine,
+  }) : _engine = engine,
+       super(
+         api: '8',
+         type: 'movie',
+         version: '1.1.0',
+         supportedMediaTypes: const ['anime', 'tv', 'movie'],
+         muliSources: true,
+         useWebview: false,
+         useNativePlayer: true,
+         usePost: false,
+         useLegacyParser: false,
+         adBlocker: false,
+         userAgent: '',
+         referer: '',
+         searchURL: '',
+         searchList: '',
+         searchName: '',
+         searchResult: '',
+         chapterRoads: '',
+         chapterResult: '',
+         searchMode: RuleMode.api,
+         searchApiConfig: ApiSearchConfig(
+           request: ApiRequestConfig(
+             method: 'GET',
+             url: '$baseUrl/api.php/provide/vod/',
+             query: const {'ac': 'videolist', 'wd': '@keyword', 'pg': 1},
+           ),
+           listPath: r'$.list[*]',
+           namePath: r'$.vod_name',
+           sourcePath: r'$.vod_id',
+         ),
+       );
+
+  final RuleEngine _engine;
+
+  @override
+  Future<RuleSearchTrace> traceSearch(
+    String keyword, {
+    RuleCancelToken? cancelToken,
+  }) {
+    return _engine.search(executionConfig, keyword, cancelToken: cancelToken);
+  }
+}
+
 void main() {
   group('Phase 4 动漫跨频道健康共享与 SourceTrafficGuard 集成', () {
     test(
@@ -111,10 +196,6 @@ void main() {
         final now = DateTime(2026, 11, 26, 16, 0);
         final health = SourceHealthRepository(clock: () => now);
         final scoring = SourceScoringEngine(healthRepository: health);
-        final guard = SourceTrafficGuard(
-          maxPerHostConcurrency: 2,
-          hostMinInterval: Duration.zero,
-        );
 
         final callOrder = <String>[];
         final slowPlugin = _StubAnimePlugin(
@@ -206,7 +287,6 @@ void main() {
         final service = PluginSearchService(
           infoController: infoController,
           pluginsController: pluginsController,
-          trafficGuard: guard,
           healthRepository: health,
           scoringEngine: scoring,
         );
@@ -238,6 +318,134 @@ void main() {
           ),
           isFalse,
         );
+      },
+    );
+
+    test(
+      'PluginSearchService 并发检索超过全局并发上限的多个真实 RuleEngine 动漫源不会发生信号量死锁，且取消排队不污染健康记录',
+      () async {
+        final guard = SourceTrafficGuard(
+          hostMinInterval: Duration.zero,
+          maxPerHostConcurrency: 2,
+          defaultGlobalConcurrency: 2,
+          constrainedGlobalConcurrency: 2,
+          isConstrainedResolver: () => false,
+        );
+        var active = 0;
+        var maxActive = 0;
+        final engine = RuleEngine(
+          logFailures: false,
+          requestExecutor: _GuardedRuleExecutor(
+            guard: guard,
+            responder: (request, config, _) async {
+              active++;
+              if (active > maxActive) maxActive = active;
+              await Future<void>.delayed(const Duration(milliseconds: 15));
+              active--;
+              final kw = request.query['wd'] ?? '';
+              return '{"list":[{"vod_id":"101","vod_name":"$kw (${config.pluginName})"}]}';
+            },
+          ),
+        );
+
+        final health = SourceHealthRepository();
+        final scoring = SourceScoringEngine(healthRepository: health);
+        final pluginsController = PluginsController();
+        for (var i = 0; i < 6; i++) {
+          pluginsController.pluginList.add(
+            _RuleEngineBackedAnimePlugin(
+              name: '动漫源$i',
+              ruleId: 'kazumi-plus.anime-$i',
+              baseUrl: 'https://anime$i.example.com',
+              engine: engine,
+            ),
+          );
+        }
+
+        final infoController = InfoController(
+          CollectController(_StubCollectCrudRepository()),
+        );
+        final service = PluginSearchService(
+          infoController: infoController,
+          pluginsController: pluginsController,
+          healthRepository: health,
+          scoringEngine: scoring,
+        );
+
+        await service
+            .queryAllSource('葬送的芙莉莲')
+            .timeout(const Duration(seconds: 3));
+
+        expect(infoController.pluginSearchResponseList.length, 6);
+        for (var i = 0; i < 6; i++) {
+          expect(
+            infoController.pluginSearchStatus['动漫源$i'],
+            PluginSearchStatus.success,
+          );
+        }
+        expect(maxActive, lessThanOrEqualTo(2));
+        expect(guard.activeGlobalRequests, 0);
+
+        // 取消排队中的检索不应被包装为 SearchErrorException 或写入故障健康记录
+        final blockGate = Completer<void>();
+        final cancelEngine = RuleEngine(
+          logFailures: false,
+          requestExecutor: _GuardedRuleExecutor(
+            guard: guard,
+            responder: (request, config, cancelToken) async {
+              final completer = Completer<String>();
+              cancelToken.whenCancel.then((err) {
+                if (!completer.isCompleted) completer.completeError(err);
+              });
+              blockGate.future.then((_) {
+                if (!completer.isCompleted) {
+                  completer.complete('{"list":[]}');
+                }
+              });
+              return completer.future;
+            },
+          ),
+        );
+        final cancelPlugins = PluginsController();
+        for (var i = 0; i < 4; i++) {
+          cancelPlugins.pluginList.add(
+            _RuleEngineBackedAnimePlugin(
+              name: '取消源$i',
+              ruleId: 'kazumi-plus.cancel-$i',
+              baseUrl: 'https://cancel$i.example.com',
+              engine: cancelEngine,
+            ),
+          );
+        }
+        final cancelHealth = SourceHealthRepository();
+        final cancelInfo = InfoController(
+          CollectController(_StubCollectCrudRepository()),
+        );
+        final cancelService = PluginSearchService(
+          infoController: cancelInfo,
+          pluginsController: cancelPlugins,
+          healthRepository: cancelHealth,
+          scoringEngine: SourceScoringEngine(healthRepository: cancelHealth),
+        );
+
+        final searchFuture = cancelService.queryAllSource('鬼灭之刃');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        cancelService.cancel();
+        await searchFuture.timeout(const Duration(seconds: 2));
+        // 等待取消信号沿底层请求回调传播并执行 finally 释放信号量槽位
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        for (var i = 0; i < 4; i++) {
+          expect(
+            cancelHealth.healthFor('kazumi-plus.cancel-$i', MediaKind.anime),
+            isNull,
+          );
+          expect(
+            cancelInfo.pluginSearchStatus['取消源$i'],
+            isNot(PluginSearchStatus.error),
+          );
+        }
+        expect(guard.activeGlobalRequests, 0);
       },
     );
 

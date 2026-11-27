@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kazumi/request/config/api_endpoints.dart';
 import 'package:kazumi/services/update/auto_updater.dart';
 import 'package:kazumi/services/update/update_download_source.dart';
 import 'package:kazumi/services/update/update_downloader.dart';
@@ -165,6 +168,262 @@ void main() {
         getAvailableUpdateDownloadSources(dualAsset),
         equals([UpdateDownloadSource.mirror, UpdateDownloadSource.github]),
       );
+    });
+  });
+
+  group('ApiEndpoints update channel configuration', () {
+    test('defaults to independent Kazumi Plus release API', () {
+      expect(ApiEndpoints.isUpdateConfigured, isTrue);
+      expect(
+        ApiEndpoints.effectiveLatestApp,
+        equals(ApiEndpoints.defaultPlusUpdateUrl),
+      );
+      expect(
+        ApiEndpoints.isUpstreamKazumiUpdateUrl(ApiEndpoints.effectiveLatestApp),
+        isFalse,
+      );
+      expect(
+        ApiEndpoints.releasePageUrl,
+        equals('https://github.com/wy32428011/kazumi-plus/releases'),
+      );
+    });
+
+    test('resolveUpdateUrl validates scheme and blocks upstream Predidit/Kazumi', () {
+      expect(ApiEndpoints.resolveUpdateUrl(''), isEmpty);
+      expect(ApiEndpoints.resolveUpdateUrl('   '), isEmpty);
+      expect(ApiEndpoints.resolveUpdateUrl('ftp://example.com/latest'), isEmpty);
+      expect(
+        ApiEndpoints.resolveUpdateUrl(
+          'https://api.github.com/repos/Predidit/Kazumi/releases/latest',
+        ),
+        isEmpty,
+      );
+      expect(
+        ApiEndpoints.resolveUpdateUrl(
+          'https://api.github.com/repos/predidit/kazumi/releases/latest',
+        ),
+        isEmpty,
+      );
+      expect(
+        ApiEndpoints.resolveUpdateUrl('https://github.com/Predidit/Kazumi/releases'),
+        isEmpty,
+      );
+      expect(
+        ApiEndpoints.resolveUpdateUrl(
+          '  https://api.github.com/repos/custom-owner/kazumi-plus/releases/latest  ',
+        ),
+        equals(
+          'https://api.github.com/repos/custom-owner/kazumi-plus/releases/latest',
+        ),
+      );
+    });
+
+    test('deriveReleasePageUrl converts GitHub API endpoint to web releases URL', () {
+      expect(
+        ApiEndpoints.deriveReleasePageUrl(
+          'https://api.github.com/repos/wy32428011/kazumi-plus/releases/latest',
+        ),
+        equals('https://github.com/wy32428011/kazumi-plus/releases'),
+      );
+      expect(
+        ApiEndpoints.deriveReleasePageUrl('https://updates.example.com/latest.json'),
+        equals('https://updates.example.com/latest.json'),
+      );
+      expect(
+        ApiEndpoints.deriveReleasePageUrl(
+          'https://api.github.com/repos/Predidit/Kazumi/releases/latest',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
+  group('SHA256SUMS parsing and fallback', () {
+    const validSha =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const secondSha =
+        'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+    test('parseSha256Sums parses standard and binary checksum formats', () {
+      const sumsContent = '''
+# Kazumi Plus checksums
+$validSha  Kazumi-Plus-v0.3.0-windows-x64-setup.exe
+$secondSha *./Kazumi-Plus-v0.3.0-android-mobile-arm64.apk
+short-hash  invalid.zip
+''';
+
+      expect(
+        findSha256InSums(
+          sumsContent,
+          'Kazumi-Plus-v0.3.0-windows-x64-setup.exe',
+        ),
+        equals(validSha),
+      );
+      expect(
+        findSha256InSums(
+          sumsContent,
+          'kazumi-plus-v0.3.0-android-mobile-arm64.apk',
+        ),
+        equals(secondSha),
+      );
+      expect(findSha256InSums(sumsContent, 'invalid.zip'), isEmpty);
+    });
+
+    test('resolveExpectedHash falls back to SHA256SUMS.txt when digest is absent', () async {
+      final fetchedUrls = <String>[];
+      final updater = AutoUpdater.forTesting(
+        textFetcher: (url, {headers = const {}}) async {
+          fetchedUrls.add(url);
+          return '$validSha  Kazumi-Plus-v0.3.0-windows-x64-setup.exe\n';
+        },
+      );
+      final targetAsset = <String, dynamic>{
+        'name': 'Kazumi-Plus-v0.3.0-windows-x64-setup.exe',
+        'browser_download_url':
+            'https://github.com/wy32428011/kazumi-plus/releases/download/v0.3.0/Kazumi-Plus-v0.3.0-windows-x64-setup.exe',
+      };
+      final assets = [
+        targetAsset,
+        <String, dynamic>{
+          'name': 'SHA256SUMS.txt',
+          'browser_download_url':
+              'https://github.com/wy32428011/kazumi-plus/releases/download/v0.3.0/SHA256SUMS.txt',
+        },
+      ];
+
+      final resolved = await updater.resolveExpectedHash(
+        assets,
+        targetAsset,
+        UpdateDownloadSource.github,
+      );
+      expect(resolved, equals(validSha));
+      expect(
+        fetchedUrls,
+        equals([
+          'https://github.com/wy32428011/kazumi-plus/releases/download/v0.3.0/SHA256SUMS.txt',
+        ]),
+      );
+    });
+
+    test('resolveExpectedHash uses asset digest directly without extra fetch', () async {
+      var fetched = false;
+      final updater = AutoUpdater.forTesting(
+        textFetcher: (url, {headers = const {}}) async {
+          fetched = true;
+          return '';
+        },
+      );
+      final targetAsset = <String, dynamic>{
+        'name': 'Kazumi-Plus-v0.3.0-windows-x64-setup.exe',
+        'digest': 'sha256:$validSha',
+      };
+
+      final resolved = await updater.resolveExpectedHash(
+        [targetAsset],
+        targetAsset,
+        UpdateDownloadSource.github,
+      );
+      expect(resolved, equals(validSha));
+      expect(fetched, isFalse);
+    });
+
+    test('getUpdateDownloadErrorMessage exposes missing SHA256 argument error', () {
+      expect(
+        getUpdateDownloadErrorMessage(ArgumentError('更新缺少有效的 SHA256 校验值')),
+        equals('更新缺少有效的 SHA256 校验值'),
+      );
+    });
+  });
+
+  group('AutoUpdater.checkForUpdates', () {
+    test('detects newer GitHub release and sends GitHub API headers', () async {
+      String? requestedUrl;
+      Map<String, dynamic>? requestedHeaders;
+      final updater = AutoUpdater.forTesting(
+        updateUrl:
+            'https://api.github.com/repos/wy32428011/kazumi-plus/releases/latest',
+        currentVersion: '0.2.0',
+        installationTypesDetector: () => const [
+          InstallationType.windowsExe,
+          InstallationType.windowsPortable,
+        ],
+        textFetcher: (url, {headers = const {}}) async {
+          requestedUrl = url;
+          requestedHeaders = headers;
+          return json.encode({
+            'tag_name': 'v0.3.0',
+            'body': '新版本说明',
+            'html_url':
+                'https://github.com/wy32428011/kazumi-plus/releases/tag/v0.3.0',
+            'published_at': '2026-11-28T00:00:00Z',
+            'assets': [
+              {
+                'name': 'Kazumi-Plus-v0.3.0-windows-x64-setup.exe',
+                'browser_download_url':
+                    'https://github.com/wy32428011/kazumi-plus/releases/download/v0.3.0/Kazumi-Plus-v0.3.0-windows-x64-setup.exe',
+                'digest':
+                    'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+              },
+            ],
+          });
+        },
+      );
+
+      final info = await updater.checkForUpdates();
+      expect(
+        requestedUrl,
+        equals(
+          'https://api.github.com/repos/wy32428011/kazumi-plus/releases/latest',
+        ),
+      );
+      expect(
+        requestedHeaders?['Accept'],
+        contains('application/vnd.github+json'),
+      );
+      expect(info, isNotNull);
+      expect(info!.version, equals('v0.3.0'));
+      expect(info.description, equals('新版本说明'));
+      expect(
+        info.recommendedInstallationType,
+        equals(InstallationType.windowsExe),
+      );
+      expect(
+        info.availableInstallationTypes,
+        equals([InstallationType.windowsExe]),
+      );
+    });
+
+    test('returns null when already on latest version', () async {
+      final updater = AutoUpdater.forTesting(
+        updateUrl:
+            'https://api.github.com/repos/wy32428011/kazumi-plus/releases/latest',
+        currentVersion: '0.2.0',
+        textFetcher: (url, {headers = const {}}) async => json.encode({
+          'tag_name': 'v0.2.0',
+          'assets': const [],
+        }),
+      );
+
+      expect(await updater.checkForUpdates(), isNull);
+    });
+
+    test('skips request when updateUrl is empty or points to upstream Kazumi', () async {
+      var calls = 0;
+      for (final blockedUrl in [
+        '',
+        'https://api.github.com/repos/Predidit/Kazumi/releases/latest',
+      ]) {
+        final updater = AutoUpdater.forTesting(
+          updateUrl: blockedUrl,
+          currentVersion: '0.1.0',
+          textFetcher: (url, {headers = const {}}) async {
+            calls++;
+            return '{}';
+          },
+        );
+        expect(await updater.checkForUpdates(), isNull);
+      }
+      expect(calls, equals(0));
     });
   });
 }

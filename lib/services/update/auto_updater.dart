@@ -85,9 +85,21 @@ Map<String, dynamic>? getUpdateAssetForType(
 String getUpdateFileHashFromAsset(Map<String, dynamic> asset) {
   final digest = asset['digest'] as String? ?? '';
   if (digest.startsWith('sha256:')) {
-    return digest.substring(7);
+    return digest.substring(7).trim().toLowerCase();
   }
   return '';
+}
+
+Map<String, dynamic>? findSha256SumsAsset(List<dynamic> assets) {
+  for (final item in assets) {
+    if (item is! Map) continue;
+    final asset = Map<String, dynamic>.from(item);
+    final name = (asset['name'] as String?)?.trim().toLowerCase() ?? '';
+    if (name == 'sha256sums.txt') {
+      return asset;
+    }
+  }
+  return null;
 }
 
 List<String> getUpdateFilePatterns(InstallationType installationType) {
@@ -149,16 +161,68 @@ List<InstallationType> resolveAvailableInstallationTypes(
   return matched.isNotEmpty ? matched : detectedTypes;
 }
 
+typedef UpdateTextFetcher = Future<String> Function(
+  String url, {
+  Map<String, dynamic> headers,
+});
+
 class AutoUpdater {
   static final AutoUpdater _instance = AutoUpdater._internal();
 
   factory AutoUpdater() => _instance;
 
-  AutoUpdater._internal();
+  AutoUpdater._internal()
+      : _updateUrlOverride = null,
+        _currentVersionOverride = null,
+        _textFetcher = null,
+        _installationTypesDetector = null;
+
+  @visibleForTesting
+  AutoUpdater.forTesting({
+    String? updateUrl,
+    String? currentVersion,
+    UpdateTextFetcher? textFetcher,
+    List<InstallationType> Function()? installationTypesDetector,
+  })  : _updateUrlOverride = updateUrl,
+        _currentVersionOverride = currentVersion,
+        _textFetcher = textFetcher,
+        _installationTypesDetector = installationTypesDetector;
+
+  final String? _updateUrlOverride;
+  final String? _currentVersionOverride;
+  final UpdateTextFetcher? _textFetcher;
+  final List<InstallationType> Function()? _installationTypesDetector;
 
   final DownloadHttpClient _downloadClient = DownloadHttpClient.instance;
 
+  static const Map<String, dynamic> _releaseApiHeaders = {
+    'Accept': 'application/vnd.github+json, application/json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  String get _effectiveUpdateUrl {
+    final raw = _updateUrlOverride ?? ApiEndpoints.latestApp;
+    return ApiEndpoints.resolveUpdateUrl(raw);
+  }
+
+  String get _currentVersion => _currentVersionOverride ?? ApiEndpoints.version;
+
+  Future<String> _fetchPlainText(
+    String url, {
+    Map<String, dynamic> headers = const {},
+  }) {
+    final fetcher = _textFetcher;
+    if (fetcher != null) {
+      return fetcher(url, headers: headers);
+    }
+    return _downloadClient.getPlain(url, headers: headers);
+  }
+
   List<InstallationType> _detectAvailableInstallationTypes() {
+    final detector = _installationTypesDetector;
+    if (detector != null) {
+      return detector();
+    }
     return detectAvailableInstallationTypes(
       isWindows: Platform.isWindows,
       isLinux: Platform.isLinux,
@@ -170,18 +234,17 @@ class AutoUpdater {
   }
 
   Future<UpdateInfo?> checkForUpdates() async {
-    if (ApiEndpoints.latestApp.isEmpty) return null;
+    final updateUrl = _effectiveUpdateUrl;
+    if (updateUrl.isEmpty) return null;
     try {
-      final data = await _latestRelease();
+      final data = await _latestRelease(updateUrl);
 
-      if (!data.containsKey('tag_name')) {
+      final remoteVersion = (data['tag_name'] as String?)?.trim() ?? '';
+      if (remoteVersion.isEmpty) {
         throw Exception('无效的响应数据');
       }
 
-      final remoteVersion = data['tag_name'] as String;
-      final currentVersion = ApiEndpoints.version;
-
-      if (needUpdate(currentVersion, remoteVersion)) {
+      if (needUpdate(_currentVersion, remoteVersion)) {
         final assets = data['assets'] is List ? data['assets'] as List : const [];
         final availableTypes = resolveAvailableInstallationTypes(
           _detectAvailableInstallationTypes(),
@@ -190,10 +253,10 @@ class AutoUpdater {
 
         return UpdateInfo(
           version: remoteVersion,
-          description: data['body'] ?? '发现新版本',
+          description: (data['body'] as String?) ?? '发现新版本',
           downloadUrl: '',
-          releaseNotes: data['html_url'] ?? '',
-          publishedAt: data['published_at'] ?? '',
+          releaseNotes: (data['html_url'] as String?) ?? '',
+          publishedAt: (data['published_at'] as String?) ?? '',
           installationType: availableTypes.first,
           availableInstallationTypes: availableTypes,
           assets: assets,
@@ -207,8 +270,11 @@ class AutoUpdater {
     }
   }
 
-  Future<Map<String, dynamic>> _latestRelease() async {
-    final raw = await _downloadClient.getPlain(ApiEndpoints.latestAppMirror);
+  Future<Map<String, dynamic>> _latestRelease(String updateUrl) async {
+    final raw = await _fetchPlainText(
+      updateUrl,
+      headers: _releaseApiHeaders,
+    );
     final data = json.decode(raw);
     if (data is! Map) {
       throw Exception('Invalid update response');
@@ -216,8 +282,49 @@ class AutoUpdater {
     return Map<String, dynamic>.from(data);
   }
 
+  /// 优先使用 GitHub Asset 自带的 `digest`，缺失时从同 Release 的 `SHA256SUMS.txt` 解析。
+  Future<String> resolveExpectedHash(
+    List<dynamic> assets,
+    Map<String, dynamic> asset,
+    UpdateDownloadSource source,
+  ) async {
+    final directHash = getUpdateFileHashFromAsset(asset);
+    if (RegExp(r'^[a-f0-9]{64}$').hasMatch(directHash)) {
+      return directHash;
+    }
+
+    final assetName = (asset['name'] as String?)?.trim() ?? '';
+    final sumsAsset = findSha256SumsAsset(assets);
+    if (assetName.isEmpty || sumsAsset == null) {
+      return directHash;
+    }
+
+    var sumsUrl = getUpdateDownloadUrlFromAsset(sumsAsset, source);
+    if (sumsUrl.isEmpty && source != UpdateDownloadSource.github) {
+      sumsUrl =
+          getUpdateDownloadUrlFromAsset(sumsAsset, UpdateDownloadSource.github);
+    }
+    if (sumsUrl.isEmpty) {
+      return directHash;
+    }
+
+    try {
+      final sumsText = await _fetchPlainText(sumsUrl);
+      final parsed = findSha256InSums(sumsText, assetName);
+      if (parsed.isNotEmpty) {
+        return parsed;
+      }
+    } catch (e) {
+      KazumiLogger().w(
+        'Update: failed to fetch SHA256SUMS.txt fallback',
+        error: e,
+      );
+    }
+    return directHash;
+  }
+
   Future<void> autoCheckForUpdates() async {
-    if (ApiEndpoints.latestApp.isEmpty) return;
+    if (_effectiveUpdateUrl.isEmpty) return;
     final autoUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
     if (!autoUpdate) return;
 
@@ -232,7 +339,7 @@ class AutoUpdater {
   }
 
   Future<void> manualCheckForUpdates() async {
-    if (ApiEndpoints.latestApp.isEmpty) {
+    if (_effectiveUpdateUrl.isEmpty) {
       KazumiDialog.showToast(message: '尚未配置 Kazumi Plus 更新渠道，请使用独立版发布包更新。');
       return;
     }
@@ -274,7 +381,10 @@ class AutoUpdater {
       if (!selectedType.downloadsInApp) {
         String releaseUrl = updateInfo.releaseNotes;
         if (releaseUrl.isEmpty) {
-          releaseUrl = ApiEndpoints.latestApp;
+          releaseUrl = ApiEndpoints.deriveReleasePageUrl(_effectiveUpdateUrl);
+        }
+        if (releaseUrl.isEmpty) {
+          releaseUrl = ApiEndpoints.releasePageUrl;
         }
         launchUrl(Uri.parse(releaseUrl), mode: LaunchMode.externalApplication);
         return;
@@ -287,7 +397,11 @@ class AutoUpdater {
         return;
       }
 
-      final expectedHash = getUpdateFileHashFromAsset(asset);
+      final expectedHash = await resolveExpectedHash(
+        updateInfo.assets,
+        asset,
+        source,
+      );
       final downloadInfo = UpdateInfo(
         version: updateInfo.version,
         description: updateInfo.description,
@@ -489,6 +603,8 @@ class AutoUpdater {
             const [],
             mode: ProcessStartMode.detached,
           );
+          // 立即退出释放单实例互斥锁（kazumi.plus.win.mutex），避免 Inno Setup 判定应用仍在运行。
+          exit(0);
         } else if (installationType == InstallationType.windowsMsix) {
           final Uri fileUri = Uri.file(filePath);
           if (await canLaunchUrl(fileUri)) {

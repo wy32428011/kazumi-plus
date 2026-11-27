@@ -140,7 +140,12 @@ jobs:
           $versionOutput = (flutter --version --machine 2>&1 | Out-String)
           $version = ConvertTo-FlutterVersionJson $versionOutput | ConvertFrom-Json
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
-          ./scripts/build_plus.ps1 -Target WindowsRelease -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
+          $winEvidenceDir = Join-Path (Get-Location).Path '.tools/logs/release-windows-evidence'
+          ./scripts/build_plus.ps1 -Target WindowsRelease -EvidenceDirectory $winEvidenceDir -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
+          $winResult = Get-Content -LiteralPath (Join-Path $winEvidenceDir 'result.json') -Raw | ConvertFrom-Json
+          if (-not $winResult.update_url_configured -or $winResult.update_url -ne $env:KAZUMI_PLUS_UPDATE_URL) {
+            throw "Windows 发布构建未正确注入更新地址（实际：$($winResult.update_url)，期望：$($env:KAZUMI_PLUS_UPDATE_URL)）。"
+          }
 
           $repoRoot = (Get-Location).Path
           $outDir = Join-Path $repoRoot 'dist/release/windows'
@@ -271,7 +276,12 @@ jobs:
           $version = ConvertTo-FlutterVersionJson $versionOutput | ConvertFrom-Json
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
           $target = if ($env:PLUS_FLAVOR -eq 'tv') { 'AndroidTvRelease' } else { 'AndroidRelease' }
-          ./scripts/build_plus.ps1 -Target $target -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
+          $androidEvidenceDir = Join-Path (Get-Location).Path ".tools/logs/release-android-$($env:PLUS_FLAVOR)-evidence"
+          ./scripts/build_plus.ps1 -Target $target -EvidenceDirectory $androidEvidenceDir -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
+          $androidResult = Get-Content -LiteralPath (Join-Path $androidEvidenceDir 'result.json') -Raw | ConvertFrom-Json
+          if (-not $androidResult.update_url_configured -or $androidResult.update_url -ne $env:KAZUMI_PLUS_UPDATE_URL) {
+            throw "Android ($($env:PLUS_FLAVOR)) 发布构建未正确注入更新地址（实际：$($androidResult.update_url)，期望：$($env:KAZUMI_PLUS_UPDATE_URL)）。"
+          }
           $sourceApk = if ($env:PLUS_FLAVOR -eq 'tv') {
             'build/app/outputs/flutter-apk/app-tv-release.apk'
           } else {
@@ -348,16 +358,20 @@ jobs:
           set -euo pipefail
           bash scripts/build_apple.sh "$PLUS_APPLE_PLATFORM" --update-url "$KAZUMI_PLUS_UPDATE_URL"
           mkdir -p "dist/release/$PLUS_APPLE_PLATFORM"
-          python3 - "$PLUS_APPLE_PLATFORM" "$RELEASE_TAG" <<'PY'
+          python3 - "$PLUS_APPLE_PLATFORM" "$RELEASE_TAG" "$KAZUMI_PLUS_UPDATE_URL" <<'PY'
           import json
           import shutil
           import sys
           from pathlib import Path
 
-          platform, tag = sys.argv[1], sys.argv[2]
+          platform, tag, expected_update_url = sys.argv[1], sys.argv[2], sys.argv[3]
           apple_dir = Path("dist/apple") / platform
           result = json.loads((apple_dir / "result.json").read_text(encoding="utf-8"))
           assert result.get("status") == "artifact_verified", result.get("status")
+          assert result.get("update_url_configured") is True, result.get("update_url_configured")
+          assert result.get("update_url") == expected_update_url, (
+              f"Unexpected update_url: {result.get('update_url')!r} != {expected_update_url!r}"
+          )
           artifacts = result.get("artifacts") or []
           assert len(artifacts) == 1, f"Unexpected artifacts count: {len(artifacts)}"
           source = apple_dir / artifacts[0]["path"]
@@ -412,9 +426,17 @@ jobs:
           set -euo pipefail
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+            edit_flags=(
+              --title "Kazumi Plus $RELEASE_TAG"
+              --notes-file "$NOTES_PATH"
+              "--draft=$IS_DRAFT"
+              "--prerelease=$IS_PRERELEASE"
+            )
+            if [[ "$IS_DRAFT" != 'true' && "$IS_PRERELEASE" != 'true' ]]; then
+              edit_flags+=(--latest)
+            fi
             gh release edit "$RELEASE_TAG" \
-              --title "Kazumi Plus $RELEASE_TAG" \
-              --notes-file "$NOTES_PATH" \
+              "${edit_flags[@]}" \
               --repo "$GITHUB_REPOSITORY"
           else
             extra_flags=()
@@ -423,6 +445,9 @@ jobs:
             fi
             if [[ "$IS_PRERELEASE" == 'true' ]]; then
               extra_flags+=(--prerelease)
+            fi
+            if [[ "$IS_DRAFT" != 'true' && "$IS_PRERELEASE" != 'true' ]]; then
+              extra_flags+=(--latest)
             fi
             gh release create "$RELEASE_TAG" release-assets/* \
               --title "Kazumi Plus $RELEASE_TAG" \

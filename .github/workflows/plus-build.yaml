@@ -27,6 +27,7 @@ concurrency:
 env:
   FLUTTER_VERSION: '3.47.7'
   FLUTTER_FRAMEWORK_REVISION: abaf9c523780a608bd46686fd5e53740a07077f8
+  KAZUMI_PLUS_UPDATE_URL: https://api.github.com/repos/${{ github.repository }}/releases/latest
 
 jobs:
   windows:
@@ -55,7 +56,7 @@ jobs:
         run: |
           $version = flutter --version --machine | ConvertFrom-Json
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
-          ./scripts/build_plus.ps1 -Target WindowsRelease
+          ./scripts/build_plus.ps1 -Target WindowsRelease -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
           New-Item -ItemType Directory -Path dist/ci/windows -Force | Out-Null
           $bundle = (Resolve-Path 'build/windows/x64/runner/Release').Path
           $staging = Join-Path $env:RUNNER_TEMP 'plus-windows-package'
@@ -157,7 +158,7 @@ jobs:
           $version = flutter --version --machine | ConvertFrom-Json
           if ($version.frameworkRevision -ne $env:FLUTTER_FRAMEWORK_REVISION) { throw 'Unexpected Flutter revision.' }
           $target = if ($env:PLUS_FLAVOR -eq 'tv') { 'AndroidTvRelease' } else { 'AndroidRelease' }
-          ./scripts/build_plus.ps1 -Target $target
+          ./scripts/build_plus.ps1 -Target $target -UpdateUrl "$env:KAZUMI_PLUS_UPDATE_URL"
           $sourceApk = if ($env:PLUS_FLAVOR -eq 'tv') { 'build/app/outputs/flutter-apk/app-tv-release.apk' } else { 'build/app/outputs/flutter-apk/app-arm64-v8a-mobile-release.apk' }
           $outputDirectory = "dist/ci/android-$env:PLUS_FLAVOR"
           New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
@@ -251,7 +252,7 @@ jobs:
             echo '### Apple dependency locks generated; commit the reviewed lock/source changes, then run build mode.' >> "$GITHUB_STEP_SUMMARY"
             echo 'This bootstrap run did not build an application.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$PLUS_APPLE_MODE" == 'build' ]]; then
-            bash scripts/build_apple.sh "$PLUS_APPLE_PLATFORM"
+            bash scripts/build_apple.sh "$PLUS_APPLE_PLATFORM" --update-url "$KAZUMI_PLUS_UPDATE_URL"
           else
             echo 'Unknown Apple mode.' >&2
             exit 2

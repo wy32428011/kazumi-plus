@@ -142,7 +142,7 @@ class _ProjectHeader extends StatelessWidget {
                 style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => openAboutLink(
                   context,
-                  '${ApiEndpoints.sourceUrl}/releases',
+                  ApiEndpoints.releasePageUrl,
                 ),
                 child: const Text('更新日志'),
               ),

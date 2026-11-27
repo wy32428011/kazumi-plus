@@ -22,7 +22,68 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 import zipfile
+
+
+DEFAULT_PLUS_UPDATE_URL = "https://api.github.com/repos/wy32428011/kazumi-plus/releases/latest"
+
+
+def is_upstream_kazumi_url(url: str) -> bool:
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "").lower()
+    if host == "api.github.com" and re.match(r"^/repos/predidit/kazumi(/|$)", path):
+        return True
+    if host in ("github.com", "www.github.com") and re.match(r"^/predidit/kazumi(/|$)", path):
+        return True
+    return False
+
+
+def extract_github_slug(remote_url: str) -> str | None:
+    match = re.match(
+        r"^(?:https?://(?:www\.)?github\.com/|ssh://git@github\.com/|git@github\.com:)([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
+        remote_url.strip(),
+    )
+    if not match:
+        return None
+    return f"{match.group(1)}/{match.group(2)}"
+
+
+def resolve_update_url(project: Path, explicit_url: str = "") -> str:
+    candidate = (explicit_url or os.environ.get("KAZUMI_PLUS_UPDATE_URL", "")).strip()
+    if not candidate:
+        remotes_proc = subprocess.run(
+            ["git", "-C", str(project), "remote"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if remotes_proc.returncode == 0:
+            remotes = [line.strip() for line in remotes_proc.stdout.splitlines() if line.strip()]
+            ordered = (["plus"] if "plus" in remotes else []) + [r for r in remotes if r != "plus"]
+            for remote_name in ordered:
+                url_proc = subprocess.run(
+                    ["git", "-C", str(project), "remote", "get-url", remote_name],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if url_proc.returncode != 0:
+                    continue
+                slug = extract_github_slug(url_proc.stdout.strip())
+                if not slug or slug.lower() == "predidit/kazumi":
+                    continue
+                candidate = f"https://api.github.com/repos/{slug}/releases/latest"
+                break
+        if not candidate:
+            candidate = DEFAULT_PLUS_UPDATE_URL
+
+    if not re.match(r"^https?://", candidate):
+        raise BuildFailure(f"KAZUMI_PLUS_UPDATE_URL 必须是有效的 http/https 地址：{candidate}", 5)
+    if is_upstream_kazumi_url(candidate):
+        raise BuildFailure(f"禁止将 Kazumi Plus 更新地址指向原版上游仓库 Predidit/Kazumi：{candidate}", 5)
+    return candidate
 
 
 VERSIONS = {
@@ -656,11 +717,9 @@ def build(args: argparse.Namespace) -> int:
             command = ["flutter", "build", args.platform, "--release", "--verbose"]
             if args.platform == "ios":
                 command.append("--no-codesign")
-            update_url = (args.update_url or os.environ.get("KAZUMI_PLUS_UPDATE_URL", "")).strip()
-            if update_url:
-                if not re.match(r"^https?://", update_url):
-                    raise BuildFailure(f"KAZUMI_PLUS_UPDATE_URL 必须是有效的 http/https 地址：{update_url}", 5)
-                command.append(f"--dart-define=KAZUMI_PLUS_UPDATE_URL={update_url}")
+            update_url = resolve_update_url(project, args.update_url)
+            command.append(f"--dart-define=KAZUMI_PLUS_UPDATE_URL={update_url}")
+            runner.result["update_url"] = update_url
             runner.result["update_url_configured"] = bool(update_url)
             runner.run("apple-build", command, timeout=args.build_timeout)
             verify_lock_hashes(project, hashes)

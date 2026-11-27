@@ -4,10 +4,10 @@ import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
+import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/media/source_health_repository.dart';
 import 'package:kazumi/services/media/source_scoring_engine.dart';
-import 'package:kazumi/services/media/source_traffic_guard.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart';
 import 'package:kazumi/utils/async_session.dart';
 
@@ -15,24 +15,20 @@ class PluginSearchService {
   PluginSearchService({
     required this.infoController,
     required this.pluginsController,
-    SourceTrafficGuard? trafficGuard,
     SourceHealthRepository? healthRepository,
     SourceScoringEngine? scoringEngine,
-  }) : _trafficGuard = trafficGuard ?? SourceTrafficGuard.instance,
-       _health = healthRepository ?? SourceHealthRepository.instance,
+  }) : _health = healthRepository ?? SourceHealthRepository.instance,
        _scoring = scoringEngine ?? SourceScoringEngine.instance;
 
   final InfoController infoController;
   final PluginsController pluginsController;
-  final SourceTrafficGuard _trafficGuard;
   final SourceHealthRepository _health;
   final SourceScoringEngine _scoring;
-  final RuleCancelToken _cancelToken = RuleCancelToken();
-  final CancelToken _guardCancelToken = CancelToken();
 
-  /// Per-plugin sessions so a replacement query (alias/manual search)
-  /// invalidates the write-back of the still-running previous one.
+  /// Per-plugin sessions and cancel tokens so a replacement query
+  /// (alias/manual search) cancels and invalidates the previous attempt.
   final Map<String, AsyncSessionOwner> _querySessions = {};
+  final Map<String, RuleCancelToken> _pluginCancelTokens = {};
   bool _isCancelled = false;
 
   Future<void> querySource(String keyword, String pluginName) async {
@@ -43,11 +39,10 @@ class PluginSearchService {
         );
         infoController.pluginSearchStatus[pluginName] =
             PluginSearchStatus.pending;
-        // 用户手动重试/别名检索显式绕过单飞缓存与自动池冷却门控，仍受站点限频与并发守卫保护。
+        // 用户手动重试/别名检索显式绕过自动池冷却门控，底层 RuleEngine 仍受 SourceTrafficGuard 保护。
         await _queryPlugin(
           plugin,
           keyword,
-          deduplicate: false,
           respectCaptchaCooldown: false,
         );
         return;
@@ -112,7 +107,6 @@ class PluginSearchService {
         (plugin) => _queryPlugin(
           plugin,
           keyword,
-          deduplicate: true,
           respectCaptchaCooldown: true,
         ),
       ),
@@ -122,7 +116,6 @@ class PluginSearchService {
   Future<void> _queryPlugin(
     Plugin plugin,
     String keyword, {
-    bool deduplicate = true,
     bool respectCaptchaCooldown = true,
   }) async {
     if (_isCancelled) return;
@@ -137,21 +130,21 @@ class PluginSearchService {
     final session = _querySessions
         .putIfAbsent(plugin.name, AsyncSessionOwner.new)
         .begin();
+    final previousToken = _pluginCancelTokens[plugin.name];
+    if (previousToken != null && !previousToken.isCancelled) {
+      previousToken.cancel('replaced by newer search');
+    }
+    final cancelToken = RuleCancelToken();
+    _pluginCancelTokens[plugin.name] = cancelToken;
+
     final stopwatch = Stopwatch()..start();
-    final targetUrl = plugin.usesApiSearch
-        ? plugin.baseUrl
-        : (plugin.searchURL.isNotEmpty ? plugin.searchURL : plugin.baseUrl);
     try {
-      final result = await _trafficGuard.run<PluginSearchResponse>(
-        url: targetUrl,
-        query: {'keyword': keyword, 'plugin': identityKey},
-        cancelToken: _guardCancelToken,
-        deduplicate: deduplicate,
-        action: (_) => plugin.queryBangumi(
-          keyword,
-          shouldRethrow: true,
-          cancelToken: _cancelToken,
-        ),
+      // 底层 RuleEngine 执行器已通过 SourceTrafficGuard.instance 实施统一并发与站点限频治理，
+      // 此处直接调用 queryBangumi，避免重复套壳导致信号量重入死锁。
+      final result = await plugin.queryBangumi(
+        keyword,
+        shouldRethrow: true,
+        cancelToken: cancelToken,
       );
       stopwatch.stop();
       if (_isCancelled || session.isStale) return;
@@ -170,10 +163,16 @@ class PluginSearchService {
     } catch (error) {
       stopwatch.stop();
       if (_isCancelled || session.isStale) return;
-      if (error is DioException && error.type == DioExceptionType.cancel) {
+      if ((error is DioException && CancelToken.isCancel(error)) ||
+          (error is NetworkException &&
+              error.type == NetworkExceptionType.cancel)) {
         return;
       }
       _handleSearchError(plugin, error);
+    } finally {
+      if (identical(_pluginCancelTokens[plugin.name], cancelToken)) {
+        _pluginCancelTokens.remove(plugin.name);
+      }
     }
   }
 
@@ -227,10 +226,12 @@ class PluginSearchService {
 
   void cancel() {
     _isCancelled = true;
-    _cancelToken.cancel();
-    if (!_guardCancelToken.isCancelled) {
-      _guardCancelToken.cancel('search cancelled');
+    for (final token in _pluginCancelTokens.values) {
+      if (!token.isCancelled) {
+        token.cancel('search cancelled');
+      }
     }
+    _pluginCancelTokens.clear();
   }
 }
 

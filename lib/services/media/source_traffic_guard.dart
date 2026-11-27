@@ -24,6 +24,7 @@ class SourceTrafficGuard {
            isConstrainedResolver ?? _defaultConstrainedResolver;
 
   static final SourceTrafficGuard instance = SourceTrafficGuard();
+  static final Object _activeGuardZoneKey = Object();
 
   final Duration hostMinInterval;
   final int maxPerHostConcurrency;
@@ -98,6 +99,12 @@ class SourceTrafficGuard {
     return '$host|${method.toUpperCase()}|$normalizedPath|$queryHash';
   }
 
+  bool get _isReentrantInCurrentZone {
+    final activeGuards =
+        Zone.current[_activeGuardZoneKey] as Set<SourceTrafficGuard>?;
+    return activeGuards != null && activeGuards.contains(this);
+  }
+
   /// 在统一流量治理保护下执行请求；支持按 [deduplicate] 合并并发相同请求。
   Future<T> run<T>({
     required String url,
@@ -116,6 +123,18 @@ class SourceTrafficGuard {
               reason: '请求已取消',
             ),
       );
+    }
+
+    // 重入保护：同一异步调用链已持有本守卫实例的并发槽时直接放行，
+    // 防止嵌套调用再次申请信号量或挂靠排队中的单飞请求导致死锁。
+    if (_isReentrantInCurrentZone) {
+      final innerToken = CancelToken();
+      cancelToken?.whenCancel.then((error) {
+        if (!innerToken.isCancelled) {
+          innerToken.cancel(error);
+        }
+      });
+      return action(innerToken);
     }
 
     if (!deduplicate) {
@@ -207,7 +226,13 @@ class SourceTrafficGuard {
                 reason: '请求已取消',
               );
         }
-        return await action();
+        final activeGuards =
+            Zone.current[_activeGuardZoneKey] as Set<SourceTrafficGuard>?;
+        final nextGuards = <SourceTrafficGuard>{...?activeGuards, this};
+        return await runZoned(
+          action,
+          zoneValues: {_activeGuardZoneKey: nextGuards},
+        );
       } finally {
         hostSemaphore.release(limitProvider: () => maxPerHostConcurrency);
       }

@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'flutter_version_json.ps1')
+. (Join-Path $PSScriptRoot 'update_url.ps1')
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $flutterFileName = if ($isWindowsHost) { 'flutter.bat' } else { 'flutter' }
 
@@ -156,19 +157,8 @@ $flutterArguments = switch ($Target) {
 if ($isWindowsHost -and $Target.StartsWith('Android')) {
     $flutterArguments += '--android-project-arg=kotlin.incremental=false'
 }
-$effectiveUpdateUrl = if (-not [string]::IsNullOrWhiteSpace($UpdateUrl)) {
-    $UpdateUrl.Trim()
-} elseif (-not [string]::IsNullOrWhiteSpace($env:KAZUMI_PLUS_UPDATE_URL)) {
-    $env:KAZUMI_PLUS_UPDATE_URL.Trim()
-} else {
-    ''
-}
-if (-not [string]::IsNullOrWhiteSpace($effectiveUpdateUrl)) {
-    if ($effectiveUpdateUrl -notmatch '^https?://') {
-        throw "KAZUMI_PLUS_UPDATE_URL 必须是有效的 http/https 地址：$effectiveUpdateUrl"
-    }
-    $flutterArguments += "--dart-define=KAZUMI_PLUS_UPDATE_URL=$effectiveUpdateUrl"
-}
+$effectiveUpdateUrl = Resolve-KazumiPlusUpdateUrl -ProjectRoot $projectRoot -ExplicitUpdateUrl $UpdateUrl
+$flutterArguments += "--dart-define=KAZUMI_PLUS_UPDATE_URL=$effectiveUpdateUrl"
 
 Push-Location $projectRoot
 try {
@@ -176,6 +166,7 @@ try {
         [Environment]::SetEnvironmentVariable($environmentName, $environmentUpdates[$environmentName], 'Process')
     }
     Write-Output "构建目标：$Target；日志：$logPath"
+    Write-Output "更新地址：$effectiveUpdateUrl"
     # 完整保存命令输出；首次遥测提示属于普通文本，不能直接作为 JSON 解析。
     $flutterVersionOutputPath = Join-Path $evidenceDirectory 'flutter-version-output.log'
     $flutterVersionJsonPath = Join-Path $evidenceDirectory 'flutter-version.json'
@@ -246,7 +237,7 @@ try {
     $artifactRecords = @(foreach ($artifact in $outputFiles) {
         [ordered]@{path = [IO.Path]::GetRelativePath($projectRoot, $artifact.FullName).Replace('\', '/'); bytes = $artifact.Length; sha256 = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     })
-    [ordered]@{status = 'built_not_device_accepted'; target = $Target; source_commit = $sourceCommit; source_dirty = $sourceDirty; source_manifest_sha256 = $sourceDigest; signing_certificate_sha256 = $certificateFingerprint; artifacts = $artifactRecords} |
+    [ordered]@{status = 'built_not_device_accepted'; target = $Target; source_commit = $sourceCommit; source_dirty = $sourceDirty; source_manifest_sha256 = $sourceDigest; signing_certificate_sha256 = $certificateFingerprint; update_url = $effectiveUpdateUrl; update_url_configured = (-not [string]::IsNullOrWhiteSpace($effectiveUpdateUrl)); artifacts = $artifactRecords} |
         ConvertTo-Json -Depth 6 | Set-Content (Join-Path $evidenceDirectory 'result.json') -Encoding utf8
     Write-Output "构建成功：$Target"
     Write-Output "构建证据：$evidenceDirectory"

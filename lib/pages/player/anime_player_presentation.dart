@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
@@ -23,7 +22,6 @@ import 'package:kazumi/services/media/media_text_normalizer.dart';
 import 'package:kazumi/services/media/playback_stall_monitor.dart';
 import 'package:kazumi/services/media/source_health_repository.dart';
 import 'package:kazumi/services/media/source_scoring_engine.dart';
-import 'package:kazumi/services/media/source_traffic_guard.dart';
 import 'package:kazumi/services/network/metered_network_service.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -55,13 +53,11 @@ class AnimePlayerPresentation extends PlayerPresentationContext
     required Future<void> Function(int episode, {int currentRoad, int offset})
     changeEpisode,
     PluginsController? pluginsController,
-    SourceTrafficGuard? trafficGuard,
     SourceHealthRepository? healthRepository,
     SourceScoringEngine? scoringEngine,
     PlaybackStallMonitor? stallMonitor,
   }) : _changeEpisode = changeEpisode,
        _pluginsController = pluginsController,
-       _trafficGuard = trafficGuard ?? SourceTrafficGuard.instance,
        _health = healthRepository ?? SourceHealthRepository.instance,
        _scoring = scoringEngine ?? SourceScoringEngine.instance,
        _stallMonitor = stallMonitor ?? PlaybackStallMonitor() {
@@ -86,7 +82,6 @@ class AnimePlayerPresentation extends PlayerPresentationContext
   final Future<void> Function(int episode, {int currentRoad, int offset})
   _changeEpisode;
   final PluginsController? _pluginsController;
-  final SourceTrafficGuard _trafficGuard;
   final SourceHealthRepository _health;
   final SourceScoringEngine _scoring;
   final PlaybackStallMonitor _stallMonitor;
@@ -111,7 +106,6 @@ class AnimePlayerPresentation extends PlayerPresentationContext
   FailoverBannerState? _failoverBanner;
   _AnimeFailoverUndoSnapshot? _undoSnapshot;
   Timer? _bannerAutoHideTimer;
-  CancelToken? _discoverCancelToken;
   RuleCancelToken? _discoverRuleCancelToken;
 
   static T _readSettingOrDefault<T>(SettingKey<T> key, T fallback) {
@@ -496,16 +490,11 @@ class AnimePlayerPresentation extends PlayerPresentationContext
       if (roads.isEmpty) {
         final cancelToken = RuleCancelToken();
         final sw = Stopwatch()..start();
-        roads = await _trafficGuard.run<List<Road>>(
-          url: target.plugin.usesApiSearch
-              ? target.plugin.baseUrl
-              : target.src,
-          query: {'plugin': target.pluginIdentityKey, 'src': target.src},
-          deduplicate: true,
-          action: (_) => target.plugin.queryChapterRoads(
-            target.src,
-            cancelToken: cancelToken,
-          ),
+        // 底层 RuleEngine 执行器已通过 SourceTrafficGuard.instance 统一限速与并发控制，
+        // 避免外层重复包裹导致信号量重入死锁。
+        roads = await target.plugin.queryChapterRoads(
+          target.src,
+          cancelToken: cancelToken,
         );
         sw.stop();
         if (_disposed) return false;
@@ -636,11 +625,8 @@ class AnimePlayerPresentation extends PlayerPresentationContext
     final keyword = _searchKeyword;
     if (pluginsController == null || keyword.isEmpty) return;
 
-    _discoverCancelToken?.cancel('refresh');
-    _discoverRuleCancelToken?.cancel();
-    final guardToken = CancelToken();
+    _discoverRuleCancelToken?.cancel('refresh');
     final ruleToken = RuleCancelToken();
-    _discoverCancelToken = guardToken;
     _discoverRuleCancelToken = ruleToken;
 
     _isDiscoveringSources = true;
@@ -660,7 +646,7 @@ class AnimePlayerPresentation extends PlayerPresentationContext
       final targetNorm = MediaTextNormalizer.normalizeTitleForMatching(keyword);
       await Future.wait(
         animePlugins.map((plugin) async {
-          if (_disposed || guardToken.isCancelled) return;
+          if (_disposed || ruleToken.isCancelled) return;
           final identityKey = SourceHealthRepository.pluginIdentityKey(plugin);
           if (_health.isSourceInCaptchaCooldown(
             identityKey,
@@ -673,26 +659,17 @@ class AnimePlayerPresentation extends PlayerPresentationContext
             return;
           }
 
-          final targetUrl = plugin.usesApiSearch
-              ? plugin.baseUrl
-              : (plugin.searchURL.isNotEmpty
-                    ? plugin.searchURL
-                    : plugin.baseUrl);
           final sw = Stopwatch()..start();
           try {
-            final resp = await _trafficGuard.run(
-              url: targetUrl,
-              query: {'keyword': keyword, 'plugin': identityKey},
-              cancelToken: guardToken,
-              deduplicate: true,
-              action: (_) => plugin.queryBangumi(
-                keyword,
-                shouldRethrow: true,
-                cancelToken: ruleToken,
-              ),
+            // 底层 RuleEngine 执行器已通过 SourceTrafficGuard.instance 统一限速与并发控制，
+            // 避免外层重复包裹导致信号量重入死锁。
+            final resp = await plugin.queryBangumi(
+              keyword,
+              shouldRethrow: true,
+              cancelToken: ruleToken,
             );
             sw.stop();
-            if (_disposed || guardToken.isCancelled || resp.data.isEmpty) {
+            if (_disposed || ruleToken.isCancelled || resp.data.isEmpty) {
               return;
             }
             _health.recordSuccess(
@@ -977,8 +954,7 @@ class AnimePlayerPresentation extends PlayerPresentationContext
   void dispose() {
     _disposed = true;
     _bannerAutoHideTimer?.cancel();
-    _discoverCancelToken?.cancel('disposed');
-    _discoverRuleCancelToken?.cancel();
+    _discoverRuleCancelToken?.cancel('disposed');
     _stallMonitor.reset();
     super.dispose();
   }

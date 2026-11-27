@@ -4,7 +4,8 @@ param(
     [ValidateSet('All', 'Windows', 'WindowsInstaller', 'Android', 'AndroidTv')]
     [string]$Target = 'All',
     [switch]$AllowDirty,
-    [switch]$OpenOutput
+    [switch]$OpenOutput,
+    [string]$UpdateUrl = ''
 )
 
 # 将已核验的构建结果整理成独立批次，失败批次保留 .partial 后缀。
@@ -12,6 +13,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'update_url.ps1')
 $utf8 = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
@@ -143,6 +145,7 @@ try {
     $versionText = Get-Content -LiteralPath (Join-Path $projectRoot 'pubspec.yaml') -Raw
     if ($versionText -notmatch '(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+\d+)?\s*$') { throw '无法读取 pubspec.yaml 的应用版本。' }
     $applicationVersion = $Matches[1]
+    $effectiveUpdateUrl = Resolve-KazumiPlusUpdateUrl -ProjectRoot $projectRoot -ExplicitUpdateUrl $UpdateUrl
     $runId = '{0}-{1}-{2}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), $sourceCommit.Substring(0, 8), ([guid]::NewGuid().ToString('N').Substring(0, 8))
     $packagesRoot = Join-Path $projectRoot 'dist/packages'
     $finalDirectory = Join-Path $packagesRoot $runId
@@ -151,10 +154,11 @@ try {
     New-Item -ItemType Directory -Path $runDirectory, $logDirectory -Force | Out-Null
     Start-Transcript -LiteralPath (Join-Path $logDirectory 'package.log') | Out-Null
     $transcriptStarted = $true
-    $runState = [ordered]@{status = 'running'; phase = 'preparing_dependencies'; run_id = $runId; target = $Target; source_commit = $sourceCommit; source_dirty = $sourceDirty; output_directory = $runDirectory; started_at = (Get-Date -Format o)}
+    $runState = [ordered]@{status = 'running'; phase = 'preparing_dependencies'; run_id = $runId; target = $Target; source_commit = $sourceCommit; source_dirty = $sourceDirty; update_url = $effectiveUpdateUrl; output_directory = $runDirectory; started_at = (Get-Date -Format o)}
     Write-JsonFile (Join-Path $logDirectory 'result.json') $runState
     Write-Host "开始打包：Kazumi Plus $applicationVersion" -ForegroundColor Cyan
     Write-Host "源码提交：$sourceCommit；未提交改动：$sourceDirty"
+    Write-Host "更新地址：$effectiveUpdateUrl"
     Write-Host "日志目录：$logDirectory"
 
     $installerToolchain = $null
@@ -209,12 +213,13 @@ try {
             throw "本次目标的依赖检查结果未通过，已停止编译：$dependencyCheckPath"
         }
         $evidenceDirectory = Join-Path $logDirectory $buildTarget
-        $buildParameters = @{Target = $buildTarget; EvidenceDirectory = $evidenceDirectory; AllowDirty = $AllowDirty; FlutterRoot = $preparedFlutterRoot}
+        $buildParameters = @{Target = $buildTarget; EvidenceDirectory = $evidenceDirectory; AllowDirty = $AllowDirty; FlutterRoot = $preparedFlutterRoot; UpdateUrl = $effectiveUpdateUrl}
         & (Join-Path $PSScriptRoot 'build_plus.ps1') @buildParameters
         $buildResult = Get-Content -LiteralPath (Join-Path $evidenceDirectory 'result.json') -Raw | ConvertFrom-Json
         if ($buildResult.status -ne 'built_not_device_accepted' -or $buildResult.target -ne $buildTarget -or
             $buildResult.source_commit -ne $sourceCommit -or $buildResult.source_dirty -ne $sourceDirty -or
-            $buildResult.source_manifest_sha256 -ne $sourceDigest) { throw '本次构建来源与打包开始时的源码不一致。' }
+            $buildResult.source_manifest_sha256 -ne $sourceDigest -or
+            $buildResult.update_url -ne $effectiveUpdateUrl) { throw '本次构建来源或更新地址与打包开始时的配置不一致。' }
         $buildManifestText = Get-Content -LiteralPath (Join-Path $evidenceDirectory 'source-manifest.json') -Raw
         if ($buildManifestText.TrimEnd("`r", "`n") -ne $sourceManifestText) { throw '本次构建源码文件清单不一致。' }
         $suffix = switch ($buildTarget) {
@@ -258,7 +263,7 @@ try {
     $finalCommit = @(& git -C $projectRoot rev-parse HEAD)
     if ($LASTEXITCODE -ne 0 -or $finalCommit.Count -ne 1 -or $finalCommit[0].Trim() -ne $sourceCommit) { throw '打包期间 Git 提交发生变化。' }
     [IO.File]::WriteAllText((Join-Path $runDirectory 'source-manifest.json'), $sourceManifestText + "`n", $utf8)
-    $manifest = [ordered]@{schema_version = 1; status = 'packaged_and_verified'; run_id = $runId; application_version = $applicationVersion; completed_at = (Get-Date -Format o); source_commit = $sourceCommit; source_dirty = $sourceDirty; source_manifest_sha256 = $sourceDigest; device_accepted = $false; artifacts = $distributionRecords; build_log_directory = [IO.Path]::GetRelativePath($projectRoot, $logDirectory).Replace('\', '/'); note = '本批次完成本机构建及产物核验，设备播放验收沿用独立记录。Apple 平台使用既有云构建流程。'}
+    $manifest = [ordered]@{schema_version = 1; status = 'packaged_and_verified'; run_id = $runId; application_version = $applicationVersion; completed_at = (Get-Date -Format o); source_commit = $sourceCommit; source_dirty = $sourceDirty; source_manifest_sha256 = $sourceDigest; update_url = $effectiveUpdateUrl; device_accepted = $false; artifacts = $distributionRecords; build_log_directory = [IO.Path]::GetRelativePath($projectRoot, $logDirectory).Replace('\', '/'); note = '本批次完成本机构建及产物核验，设备播放验收沿用独立记录。Apple 平台使用既有云构建流程。'}
     Write-JsonFile (Join-Path $runDirectory 'build-manifest.json') $manifest
     $checksumFiles = @($distributionRecords.file) + @('build-manifest.json', 'source-manifest.json')
     $checksumLines = @($checksumFiles | ForEach-Object { (Get-Sha256 (Join-Path $runDirectory $_)) + '  ' + $_ })

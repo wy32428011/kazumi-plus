@@ -51,7 +51,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _continueFocus = FocusNode(debugLabel: '引导继续');
   final _steps = [
     _OnboardingStep.welcome,
-    if (Platform.isAndroid && ApiEndpoints.latestApp.isNotEmpty)
+    if (Platform.isAndroid && ApiEndpoints.isUpdateConfigured)
       _OnboardingStep.updates,
     _OnboardingStep.mirrors,
     _OnboardingStep.rules,

@@ -1,7 +1,7 @@
 name: kazumi
 description: "支持动漫、电视剧与电影的独立 Kazumi Plus 客户端。"
 publish_to: "none"
-version: 0.2.0+2
+version: 0.2.1+3
 
 environment:
   sdk: ">=3.10.0 <4.0.0"

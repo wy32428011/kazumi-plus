@@ -18,7 +18,7 @@ class UpdateSourceStep extends StatelessWidget {
           shape: OnboardingIconShape.cookie,
         ),
         title: '以你的方式更新',
-        subtitle: '选择适合你的更新来源，让 Kazumi 保持最新。',
+        subtitle: '选择适合你的更新方式，让 Kazumi Plus 保持最新。',
         child: RadioGroup<bool>(
           groupValue: useGithubUpdate,
           onChanged: (value) {
@@ -29,21 +29,21 @@ class UpdateSourceStep extends StatelessWidget {
             children: [
               _OptionCard(
                 icon: Icons.rocket_launch_rounded,
-                title: 'GitHub',
-                description: '在应用内检查并获取新版本，适合大多数用户。',
+                title: '自动检查更新',
+                description: '启动时自动从 Kazumi Plus 独立发布渠道检查并获取新版本，适合大多数用户。',
                 value: true,
                 selected: useGithubUpdate,
                 recommended: true,
               ),
               const SizedBox(height: 12),
               _OptionCard(
-                icon: Icons.storefront_rounded,
-                title: 'F-Droid',
-                description: '由 F-Droid 商店管理更新，应用内不再自动检查。',
+                icon: Icons.install_mobile_rounded,
+                title: '仅手动更新',
+                description: '不在启动时自动检查，可随时在设置或关于页手动检查并安装新版本。',
                 value: false,
                 selected: !useGithubUpdate,
               ),
-              const OnboardingHint(text: '之后也可以在 关于 → 自动检查更新 中修改。'),
+              const OnboardingHint(text: '之后也可以在 设置 → 更新设置 中修改。'),
             ],
           ),
         ),

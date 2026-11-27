@@ -61,8 +61,7 @@ class RuleEngine {
     } on CaptchaRequiredException {
       rethrow;
     } catch (error, stackTrace) {
-      if (_isCancellation(error) ||
-          (error is DioException && CancelToken.isCancel(error))) {
+      if (_isCancellation(error)) {
         rethrow;
       }
       if (_isCaptchaChallengeResponse(
@@ -245,8 +244,9 @@ class RuleEngine {
   }
 
   bool _isCancellation(Object error) {
-    return error is NetworkException &&
-        error.type == NetworkExceptionType.cancel;
+    return (error is NetworkException &&
+            error.type == NetworkExceptionType.cancel) ||
+        (error is DioException && CancelToken.isCancel(error));
   }
 
   /// Checks whether a failed XPath search request actually returned an
