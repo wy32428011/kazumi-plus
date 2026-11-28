@@ -180,8 +180,23 @@ class SettingsKeys {
   );
   static const danmakuEnabledByDefault = SettingKey<bool>(
     _SettingBoxKey.danmakuEnabledByDefault,
-    false,
+    true,
     group: SettingGroup.danmaku,
+  );
+  static const danmakuCustomApiUrl = SettingKey<String>(
+    'danmakuCustomApiUrl',
+    '',
+    group: SettingGroup.misc,
+  );
+  static const danmakuDandanAppId = SettingKey<String>(
+    'danmakuDandanAppId',
+    '',
+    group: SettingGroup.misc,
+  );
+  static const danmakuDandanAppSecret = SettingKey<String>(
+    'danmakuDandanAppSecret',
+    '',
+    group: SettingGroup.misc,
   );
   static const danmakuBiliBiliSource = SettingKey<bool>(
     _SettingBoxKey.danmakuBiliBiliSource,
@@ -608,6 +623,9 @@ class SettingsKeys {
     danmakuLineHeight,
     danmakuTimeOffset,
     danmakuEnabledByDefault,
+    danmakuCustomApiUrl,
+    danmakuDandanAppId,
+    danmakuDandanAppSecret,
     danmakuBiliBiliSource,
     danmakuGamerSource,
     danmakuDanDanSource,

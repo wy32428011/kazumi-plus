@@ -9,10 +9,12 @@ import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/pages/download/download_target.dart';
 import 'package:kazumi/pages/media/media_captcha_dialog.dart';
 import 'package:kazumi/pages/media/source_player_collect_button.dart';
+import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/pages/player/player_controls_controller.dart';
 import 'package:kazumi/pages/player/player_panel_hold.dart';
 import 'package:kazumi/pages/player/player_presentation_context.dart';
 import 'package:kazumi/pages/video/video_fullscreen_controller.dart';
+import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/media/candidate_probe_orchestrator.dart';
 import 'package:kazumi/services/media/failover_controller.dart';
@@ -29,7 +31,9 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/video_source_format.dart';
 import 'package:kazumi/services/video_source/webview_video_source_service.dart';
 import 'package:kazumi/utils/async_serial_queue.dart';
+import 'package:kazumi/utils/async_session.dart';
 import 'package:kazumi/utils/http_headers.dart';
+import 'package:kazumi/utils/media.dart';
 import 'package:media_kit/media_kit.dart' show Player;
 import 'package:mobx/mobx.dart' hide Listenable;
 
@@ -47,10 +51,10 @@ class _FailoverUndoSnapshot {
   final int positionMs;
 }
 
-/// 影视保留真实来源会话，同时承载跨源热切、实测遥测上报与单 mpv Make-Before-Break 四阶容灾。
+/// 影视保留真实来源会话，同时承载跨源热切、实测遥测上报、全频道公开弹幕与单 mpv Make-Before-Break 四阶容灾。
 class SourcePlaybackSession extends PlayerPresentationContext
     with ChangeNotifier
-    implements PlayerSourceSwitchingFeatures {
+    implements PlayerDanmakuFeatures, PlayerSourceSwitchingFeatures {
   SourcePlaybackSession({
     required this.context,
     required this.controls,
@@ -81,7 +85,18 @@ class SourcePlaybackSession extends PlayerPresentationContext
              scoringEngine: scoringEngine,
            ) {
     controls.canInteract = () => canInteract;
-    controls.onBeforeSeek = _stallMonitor.markSeek;
+    controls.onBeforeSeek = () {
+      _stallMonitor.markSeek();
+      _danmaku.clearAndInvalidateScheduledDanmakus();
+    };
+    controls.onBeforePlayingChanged = (playing) {
+      if (playing) {
+        _danmaku.resumeCanvas();
+      } else {
+        _danmaku.pauseCanvas();
+      }
+    };
+    controls.onSpeedChanged = updateDanmakuSpeed;
     controls.playback.playerSpeed = GStorage.getSetting(
       SettingsKeys.defaultPlaySpeed,
     );
@@ -153,6 +168,10 @@ class SourcePlaybackSession extends PlayerPresentationContext
   final _library = SourceMediaLibrary.instance;
   final _resolver = WebViewVideoSourceService();
   final _switches = AsyncSerialQueue();
+  final _danmakuSessions = AsyncSessionOwner();
+  late final PlayerDanmakuController _danmaku = PlayerDanmakuController(
+    isLocalPlayback: () => false,
+  );
   final _pip = Observable(false);
 
   late MediaSummary _activeMedia;
@@ -178,6 +197,7 @@ class SourcePlaybackSession extends PlayerPresentationContext
   int _episodeIndex = 0;
   int _pendingResumeTargetMs = 0;
   String _currentCdnGroup = '';
+  String _loadedDanmakuEpisodeKey = '';
   bool _loading = true;
   bool _ready = false;
   bool _resumePending = false;
@@ -254,6 +274,24 @@ class SourcePlaybackSession extends PlayerPresentationContext
 
   @override
   AnimePlayerFeatures? get animeFeatures => null;
+  @override
+  PlayerDanmakuFeatures get danmakuFeatures => this;
+  @override
+  PlayerDanmakuController get danmaku => _danmaku;
+  @override
+  String get danmakuHistoryKey =>
+      'danmakuSearchHistory_source_${_activeMedia.ref.key}';
+  @override
+  String get initialDanmakuKeyword =>
+      DanmakuApi.buildSearchCandidates([_activeMedia.title]).firstOrNull ??
+      _activeMedia.title.trim();
+  @override
+  MediaKind get danmakuMediaKind => _activeMedia.ref.kind;
+  @override
+  void updateDanmakuSpeed() =>
+      _danmaku.updateDanmakuSpeed(controls.playback.playerSpeed);
+  @override
+  void cancelAutomaticDanmakuLoad() => _danmakuSessions.cancel();
   @override
   PlayerSourceSwitchingFeatures? get sourceSwitchingFeatures => this;
   @override
@@ -860,6 +898,22 @@ class SourcePlaybackSession extends PlayerPresentationContext
 
       _roadIndex = roadIndex;
       _episodeIndex = episodeIndex;
+      final episode = _episode!;
+      final danmakuEpisodeNum = _resolveDanmakuEpisodeNumber(episode);
+      final episodeKey = _activeMedia.ref.kind == MediaKind.movie
+          ? 'movie'
+          : 'tv:$danmakuEpisodeNum';
+      final keepCurrentDanmaku = isCrossSourceSwitch &&
+          episodeKey == _loadedDanmakuEpisodeKey &&
+          _danmaku.danDanmakus.isNotEmpty;
+      if (!keepCurrentDanmaku) {
+        _loadedDanmakuEpisodeKey = '';
+        _danmakuSessions.cancel();
+        _danmaku.clearAndInvalidateScheduledDanmakus();
+        _danmaku.finishDanmakuLoad(disableDanmaku: true);
+      } else {
+        _danmaku.clearAndInvalidateScheduledDanmakus();
+      }
       _loading = true;
       _error = null;
       _reportedPlayback = false;
@@ -879,7 +933,7 @@ class SourcePlaybackSession extends PlayerPresentationContext
           final progress = _library.progressFor(
             _activeMedia.ref,
             _road!.id,
-            _episode!,
+            episode,
           );
           if (progress != null &&
               (progress.durationMs <= 0 ||
@@ -897,7 +951,6 @@ class SourcePlaybackSession extends PlayerPresentationContext
         final resumeSession = _resumePending ? MediaResumeSession() : null;
         _resumeSession = resumeSession;
 
-        final episode = _episode!;
         final path = Uri.parse(episode.url).path.toLowerCase();
         var url = episode.url;
         var format = VideoSourceFormat.auto;
@@ -1075,6 +1128,17 @@ class SourcePlaybackSession extends PlayerPresentationContext
         _loading = false;
         _lastSave = DateTime.now();
         _notify();
+
+        if (!keepCurrentDanmaku) {
+          unawaited(
+            _loadPlaybackDanmaku(
+              episode: episode,
+              episodeNumber: danmakuEpisodeNum,
+              episodeKey: episodeKey,
+              generation: generation,
+            ),
+          );
+        }
 
         if (resumeSession != null) {
           unawaited(
@@ -1479,6 +1543,66 @@ class SourcePlaybackSession extends PlayerPresentationContext
     acquirePlayerPanelHold: acquirePlayerPanelHold,
   );
 
+  int _resolveDanmakuEpisodeNumber(PlayableEpisode episode) {
+    if (_activeMedia.ref.kind == MediaKind.movie) {
+      return 1;
+    }
+    if (episode.number != null && episode.number! > 0) {
+      return episode.number!;
+    }
+    final parsed = extractEpisodeNumber(episode.title);
+    if (parsed > 0) {
+      return parsed;
+    }
+    return _episodeIndex + 1;
+  }
+
+  Future<void> _loadPlaybackDanmaku({
+    required PlayableEpisode episode,
+    required int episodeNumber,
+    required String episodeKey,
+    required int generation,
+  }) async {
+    final danmakuSession = _danmakuSessions.begin();
+    _danmaku.beginDanmakuLoad();
+    try {
+      final titles = <String>[
+        if (_activeMedia.title.trim().isNotEmpty) _activeMedia.title.trim(),
+        if (_cluster.primaryTitle.trim().isNotEmpty)
+          _cluster.primaryTitle.trim(),
+        for (final alias in _cluster.aliases)
+          if (alias.trim().isNotEmpty) alias.trim(),
+      ];
+      final result = await _danmaku.fetchMediaDanmaku(
+        titles: titles,
+        episodeNumber: episodeNumber,
+        mediaKind: _activeMedia.ref.kind,
+      );
+      if (!_isCurrent(generation) || danmakuSession.isStale) {
+        return;
+      }
+      if (result.hasDanmakus) {
+        final enableDanmaku = _readSettingOrDefault(
+          SettingsKeys.danmakuEnabledByDefault,
+          true,
+        );
+        _loadedDanmakuEpisodeKey = episodeKey;
+        _danmaku.applyDanmakuLoad(result, enableDanmaku: enableDanmaku);
+        KazumiLogger().i(
+          'PlusDanmaku: loaded ${result.danmakus.length} danmakus '
+          'for ${_activeMedia.title} (${episode.title})',
+        );
+      } else {
+        _danmaku.applyUnavailableDanmakuLoad(result);
+      }
+    } catch (error) {
+      if (_isCurrent(generation) && danmakuSession.isActive) {
+        _danmaku.finishDanmakuLoad(disableDanmaku: true);
+      }
+      KazumiLogger().w('PlusDanmaku: failed to load danmaku', error: error);
+    }
+  }
+
   Future<void> close() => _closeFuture ??= _close();
 
   Future<void> _close() async {
@@ -1486,6 +1610,8 @@ class SourcePlaybackSession extends PlayerPresentationContext
     ++_generation;
     _readyGeneration = -1;
     _resumeSession?.cancel();
+    _danmakuSessions.cancel();
+    _danmaku.clearAndInvalidateScheduledDanmakus();
     _fanOutCancel?.cancel('close');
     _resolver.cancel();
     _loadTimeout?.cancel();

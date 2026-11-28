@@ -37,9 +37,9 @@ class PlayerController implements Disposable {
       ..onSeekCompleted = _onSeekCompleted
       ..onBeforePlayingChanged = (playing) {
         if (playing) {
-          danmaku.canvasController.resume();
+          danmaku.resumeCanvas();
         } else {
-          danmaku.canvasController.pause();
+          danmaku.pauseCanvas();
         }
       }
       ..onPlayingChanged = (_, enableSync) {

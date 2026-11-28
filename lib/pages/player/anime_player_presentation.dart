@@ -7,6 +7,7 @@ import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/modules/media/work_cluster_models.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/pages/media/media_captcha_dialog.dart';
+import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/pages/player/player_controls_controller.dart';
 import 'package:kazumi/pages/player/player_panel_hold.dart';
@@ -46,7 +47,10 @@ class _AnimeFailoverUndoSnapshot {
 /// 严格守卫 BangumiItem 主身份、弹幕时间轴与 `/kazumiPlusSync` WebDAV 同步，绝不写入影视四表。
 class AnimePlayerPresentation extends PlayerPresentationContext
     with ChangeNotifier
-    implements AnimePlayerFeatures, PlayerSourceSwitchingFeatures {
+    implements
+        AnimePlayerFeatures,
+        PlayerDanmakuFeatures,
+        PlayerSourceSwitchingFeatures {
   AnimePlayerPresentation({
     required this.controller,
     required this.video,
@@ -62,7 +66,11 @@ class AnimePlayerPresentation extends PlayerPresentationContext
        _scoring = scoringEngine ?? SourceScoringEngine.instance,
        _stallMonitor = stallMonitor ?? PlaybackStallMonitor() {
     controls.canInteract = () => canInteract;
-    controls.onBeforeSeek = _stallMonitor.markSeek;
+    final previousOnBeforeSeek = controls.onBeforeSeek;
+    controls.onBeforeSeek = () {
+      previousOnBeforeSeek?.call();
+      _stallMonitor.markSeek();
+    };
     _autoFailoverEnabled = _readSettingOrDefault(
       SettingsKeys.autoFailoverEnabled,
       true,
@@ -200,6 +208,20 @@ class AnimePlayerPresentation extends PlayerPresentationContext
   PlayerControlsController get controls => controller.controls;
   @override
   AnimePlayerFeatures get animeFeatures => this;
+  @override
+  PlayerDanmakuFeatures get danmakuFeatures => this;
+  @override
+  PlayerDanmakuController get danmaku => controller.danmaku;
+  @override
+  String get danmakuHistoryKey => 'danmakuSearchHistory_${video.bangumiItem.id}';
+  @override
+  String get initialDanmakuKeyword => _searchKeyword;
+  @override
+  MediaKind get danmakuMediaKind => MediaKind.anime;
+  @override
+  void updateDanmakuSpeed() => controller.updateDanmakuSpeed();
+  @override
+  void cancelAutomaticDanmakuLoad() => video.cancelAutomaticDanmakuLoad();
   @override
   PlayerSourceSwitchingFeatures? get sourceSwitchingFeatures =>
       video.isOfflineMode ? null : this;

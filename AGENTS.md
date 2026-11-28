@@ -82,7 +82,7 @@ Kazumi Plus（`0.1.0+1`）是基于 [Predidit/Kazumi](https://github.com/Predidi
 ### 3. 统一播放器与多端交互
 - 动漫、电视剧、电影共用 `PlayerControlsController`、`PlayerPresentationContext`、`PlayerItem` 通用播放界面；原 `PlayerController` 作为动漫包装层保留弹幕与 SyncPlay 副作用。
 - 影视播放使用 `MediaRef` 与来源稳定播放项 ID，**不构造伪造 Bangumi 条目**。
-- 影视无数据支持的入口（弹幕、评论、一起看）必须在全部布局、更多菜单、快捷键、TV 遥控器操作、Android 原生 PiP 与 macOS 菜单中按能力隐藏。
+- 影视无数据支持的入口（Bangumi 评论、一起看）必须在全部布局、更多菜单、快捷键、TV 遥控器操作、Android 原生 PiP 与 macOS 菜单中按能力隐藏；三频道（动漫、电视剧、电影）统一通过 `PlayerDanmakuFeatures` 支持弹幕。
 - Android 恢复进度须在视频输出初始化后定位并回读实际位置，确认前不覆盖旧记录；切集/返回可取消；电影不自动切换版本。
 - Android TV 改动须维护独立焦点范围与遥控器返回/重试焦点交接（参见 `lib/television/` 与 [docs/unified-player-implementation.md](docs/unified-player-implementation.md)）。
 

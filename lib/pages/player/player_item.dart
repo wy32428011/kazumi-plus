@@ -88,6 +88,7 @@ class _PlayerItemState extends State<PlayerItem>
   keyboardLongPressActions;
 
   AnimePlayerFeatures? get _anime => videoPageController.animeFeatures;
+  PlayerDanmakuFeatures? get _danmaku => videoPageController.danmakuFeatures;
 
   final _danmuKey = GlobalKey();
   final _videoSurfaceKey = GlobalKey();
@@ -180,8 +181,9 @@ class _PlayerItemState extends State<PlayerItem>
       await videoPageController.onForeground();
     }
     try {
-      if (_anime != null && playerController.playback.playerPlaying) {
-        _anime!.controller.danmaku.canvasController.resume();
+      final danmakuFeatures = _danmaku;
+      if (danmakuFeatures != null && playerController.playback.playerPlaying) {
+        danmakuFeatures.danmaku.resumeCanvas();
       }
     } catch (_) {}
   }
@@ -222,7 +224,7 @@ class _PlayerItemState extends State<PlayerItem>
       return;
     }
     final bool playing = playerController.playback.playing;
-    final bool danmakuEnabled = _anime?.controller.danmaku.danmakuOn ?? false;
+    final bool danmakuEnabled = _danmaku?.danmaku.danmakuOn ?? false;
     // In picture in picture the measured rect is the small window itself.
     final Rect? sourceRect = videoPageController.isPip
         ? _lastPipSourceRect
@@ -240,7 +242,7 @@ class _PlayerItemState extends State<PlayerItem>
     await PipUtils.updateAndroidPIPActions(
       playing: playing,
       danmakuEnabled: danmakuEnabled,
-      danmakuAvailable: _anime != null,
+      danmakuAvailable: _danmaku != null,
       width: playerController.debug.playerWidth,
       height: playerController.debug.playerHeight,
       sourceRect: sourceRect,
@@ -377,7 +379,7 @@ class _PlayerItemState extends State<PlayerItem>
       'screenshot': handleScreenshot,
       'skip': skipOP,
       'exitfullscreen': () => handleShortcutExitFullscreen(),
-      if (_anime != null) 'toggledanmaku': () => handleDanmaku(),
+      if (_danmaku != null) 'toggledanmaku': () => handleDanmaku(),
       'speed1': () => setPlaybackSpeed(1.0),
       'speed2': () => setPlaybackSpeed(2.0),
       'speed3': () => setPlaybackSpeed(3.0),
@@ -586,20 +588,21 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void handleDanmaku() {
-    if (_anime == null) return;
-    _anime!.controller.danmaku.canvasController.clear();
-    if (_anime!.controller.danmaku.danmakuOn) {
-      _anime!.controller.danmaku.setDanmakuEnabled(false);
+    final danmakuFeatures = _danmaku;
+    if (danmakuFeatures == null) return;
+    danmakuFeatures.danmaku.clearCanvas();
+    if (danmakuFeatures.danmaku.danmakuOn) {
+      danmakuFeatures.danmaku.setDanmakuEnabled(false);
       GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, false);
       unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
-    if (_anime!.controller.danmaku.danDanmakus.isEmpty) {
+    if (danmakuFeatures.danmaku.danDanmakus.isEmpty) {
       showDanmakuSwitch();
       unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
-    _anime!.controller.danmaku.setDanmakuEnabled(true);
+    danmakuFeatures.danmaku.setDanmakuEnabled(true);
     GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, true);
     unawaited(_updateAndroidPIPActions(force: true));
   }
@@ -673,7 +676,7 @@ class _PlayerItemState extends State<PlayerItem>
   void _handleFullscreenChange() async {
     playerController.panel.lockPanel = false;
     _releasePlayerPanelHolds();
-    _anime?.controller.danmaku.canvasController.clear();
+    _danmaku?.danmaku.clearCanvas();
     _scheduleAndroidPIPSourceRectSync();
 
     await videoPageController.onFullscreenChanged();
@@ -1154,19 +1157,22 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void _emitDanmakusForCurrentPosition() {
-    if (_anime == null || !videoPageController.canInteract) return;
+    final danmakuFeatures = _danmaku;
+    if (danmakuFeatures == null || !videoPageController.canInteract) return;
+    final controller = danmakuFeatures.danmaku;
     if (playerController.playback.currentPosition.inMicroseconds == 0 ||
         playerController.playback.playerPlaying != true ||
-        _anime!.controller.danmaku.danmakuOn != true) {
+        controller.danmakuOn != true ||
+        !controller.hasCanvasController) {
       return;
     }
     // 暂停后切集或自动开播不会经过 controls.play()，需同步恢复弹幕画布避免有数据但不渲染。
     if (!playerController.playback.playerBuffering &&
-        !_anime!.controller.danmaku.canvasController.running) {
-      _anime!.controller.danmaku.canvasController.resume();
+        !controller.isCanvasRunning) {
+      controller.resumeCanvas();
     }
 
-    final danmakus = _anime!.controller.danmaku.danmakusForPlaybackPosition(
+    final danmakus = controller.danmakusForPlaybackPosition(
       playerController.playback.currentPosition,
     );
     final sessionPlayer = playerController.playback.mediaPlayer;
@@ -1185,8 +1191,7 @@ class _PlayerItemState extends State<PlayerItem>
         index: idx,
         total: danmakuCount,
       );
-      final scheduledDanmakuGeneration =
-          _anime!.controller.danmaku.scheduledDanmakuGeneration;
+      final scheduledDanmakuGeneration = controller.scheduledDanmakuGeneration;
       Future.delayed(Duration(milliseconds: delay), () {
         if (!mounted ||
             !videoPageController.canInteract ||
@@ -1195,13 +1200,14 @@ class _PlayerItemState extends State<PlayerItem>
             videoPageController.src != sessionSource ||
             !playerController.playback.playerPlaying ||
             playerController.playback.playerBuffering ||
-            !_anime!.controller.danmaku.danmakuOn ||
-            _anime!.controller.danmaku.scheduledDanmakuGeneration !=
+            !controller.danmakuOn ||
+            !controller.hasCanvasController ||
+            controller.scheduledDanmakuGeneration !=
                 scheduledDanmakuGeneration ||
             myController.isDanmakuBlocked(danmaku.message)) {
           return;
         }
-        _anime!.controller.danmaku.canvasController.addDanmaku(
+        controller.canvasController.addDanmaku(
           DanmakuContentItem(
             danmaku.message,
             color: color,
@@ -1239,26 +1245,18 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   void showDanmakuSwitch() {
-    if (_anime == null) return;
+    final danmakuFeatures = _danmaku;
+    if (danmakuFeatures == null) return;
     unawaited(
       showDanmakuSourceSheet(
         context,
-        bangumiId: _anime!.video.bangumiItem.id,
-        initialKeyword: _danmakuSearchKeyword(),
-        danmakuController: _anime!.controller.danmaku,
-        onBeforeApply: _anime!.video.cancelAutomaticDanmakuLoad,
+        historyKey: danmakuFeatures.danmakuHistoryKey,
+        initialKeyword: danmakuFeatures.initialDanmakuKeyword,
+        danmakuController: danmakuFeatures.danmaku,
+        onBeforeApply: danmakuFeatures.cancelAutomaticDanmakuLoad,
+        mediaKind: danmakuFeatures.danmakuMediaKind,
       ),
     );
-  }
-
-  /// 作品名比来源页标题更接近弹幕库里的条目。
-  String _danmakuSearchKeyword() {
-    final item = _anime?.video.bangumiItem;
-    final nameCn = item?.nameCn.trim() ?? '';
-    if (nameCn.isNotEmpty) return nameCn;
-    final name = item?.name.trim() ?? '';
-    if (name.isNotEmpty) return name;
-    return videoPageController.title.trim();
   }
 
   void showVideoInfo() {
@@ -1276,7 +1274,7 @@ class _PlayerItemState extends State<PlayerItem>
 
   @override
   void onWindowRestore() {
-    _anime?.controller.danmaku.canvasController.clear();
+    _danmaku?.danmaku.clearCanvas();
   }
 
   @override
@@ -1339,7 +1337,7 @@ class _PlayerItemState extends State<PlayerItem>
       parent: _screenshotFeedbackController,
       curve: Curves.linear,
     );
-    _anime?.controller.danmaku.setDanmakuEnabled(
+    _danmaku?.danmaku.setDanmakuEnabled(
       GStorage.getSetting(SettingsKeys.danmakuEnabledByDefault),
     );
     _border = GStorage.getSetting(SettingsKeys.danmakuBorder);
@@ -1515,14 +1513,16 @@ class _PlayerItemState extends State<PlayerItem>
                           height: double.infinity,
                         ),
                       ),
-                      if (_anime != null)
+                      if (_danmaku != null)
                         Positioned.fill(
                           child: DanmakuScreen(
                             key: _danmuKey,
                             createdController: (DanmakuController e) {
-                              _anime!.controller.danmaku.canvasController = e;
+                              _danmaku!.danmaku.attachCanvasController(e);
                               WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _anime!.controller.updateDanmakuSpeed();
+                                if (mounted) {
+                                  _danmaku?.updateDanmakuSpeed();
+                                }
                               });
                             },
                             option: DanmakuOption(
@@ -1807,13 +1807,20 @@ class _PlayerItemState extends State<PlayerItem>
                   : '清晰度',
             ),
           ),
-          if (_anime != null)
-            OutlinedButton(
-              onPressed: handleDanmaku,
-              child: Text(
-                _anime!.controller.danmaku.danmakuOn ? '关闭弹幕' : '开启弹幕',
+          if (_danmaku != null) ...[
+            Observer(
+              builder: (context) => OutlinedButton(
+                onPressed: handleDanmaku,
+                child: Text(
+                  _danmaku!.danmaku.danmakuOn ? '关闭弹幕' : '开启弹幕',
+                ),
               ),
             ),
+            OutlinedButton(
+              onPressed: showDanmakuSwitch,
+              child: const Text('弹幕切换'),
+            ),
+          ],
         ],
         child: Stack(
           fit: StackFit.expand,
@@ -1822,35 +1829,37 @@ class _PlayerItemState extends State<PlayerItem>
               key: _videoSurfaceKey,
               child: PlayerItemSurface(playerController: playerController),
             ),
-            if (_anime != null)
+            if (_danmaku != null)
               IgnorePointer(
-                child: Opacity(
-                  opacity: _anime!.controller.danmaku.danmakuOn ? 1 : 0,
-                  child: DanmakuScreen(
-                    key: _danmuKey,
-                    createdController: (controller) {
-                      _anime!.controller.danmaku.canvasController = controller;
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted && _anime != null) {
-                          _anime!.controller.updateDanmakuSpeed();
-                        }
-                      });
-                    },
-                    option: DanmakuOption(
-                      hideTop: _hideTop,
-                      hideScroll: _hideScroll,
-                      hideBottom: _hideBottom,
-                      area: _danmakuArea,
-                      opacity: _opacity,
-                      fontSize: _fontSize,
-                      duration: _danmakuDuration,
-                      lineHeight: _danmakuLineHeight,
-                      strokeWidth: _border ? _danmakuBorderSize : 0.0,
-                      fontWeight: _danmakuFontWeight,
-                      massiveMode: _massiveMode,
-                      fontFamily: _danmakuUseSystemFont
-                          ? null
-                          : customAppFontFamily,
+                child: Observer(
+                  builder: (context) => Opacity(
+                    opacity: _danmaku!.danmaku.danmakuOn ? 1 : 0,
+                    child: DanmakuScreen(
+                      key: _danmuKey,
+                      createdController: (controller) {
+                        _danmaku!.danmaku.attachCanvasController(controller);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            _danmaku?.updateDanmakuSpeed();
+                          }
+                        });
+                      },
+                      option: DanmakuOption(
+                        hideTop: _hideTop,
+                        hideScroll: _hideScroll,
+                        hideBottom: _hideBottom,
+                        area: _danmakuArea,
+                        opacity: _opacity,
+                        fontSize: _fontSize,
+                        duration: _danmakuDuration,
+                        lineHeight: _danmakuLineHeight,
+                        strokeWidth: _border ? _danmakuBorderSize : 0.0,
+                        fontWeight: _danmakuFontWeight,
+                        massiveMode: _massiveMode,
+                        fontFamily: _danmakuUseSystemFont
+                            ? null
+                            : customAppFontFamily,
+                      ),
                     ),
                   ),
                 ),

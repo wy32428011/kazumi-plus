@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/modules/media/work_cluster_models.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
+import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/pages/player/player_controls_controller.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/pages/player/player_panel_hold.dart';
@@ -25,10 +26,20 @@ class VideoEpisodeSelection {
   String toString() => 'VideoEpisodeSelection(episode: $episode, road: $road)';
 }
 
-/// 仅真实动漫会话提供此能力，影视不会创建占位弹幕或 Bangumi 对象。
+/// 仅真实动漫会话提供此能力（如 SyncPlay 聊天室、Bangumi 关联），影视不会创建占位 Bangumi 对象。
 abstract interface class AnimePlayerFeatures {
   PlayerController get controller;
   VideoPageController get video;
+}
+
+/// 三频道共享的弹幕能力契约（动漫、电视剧、电影统一接入）。
+abstract interface class PlayerDanmakuFeatures {
+  PlayerDanmakuController get danmaku;
+  String get danmakuHistoryKey;
+  String get initialDanmakuKeyword;
+  MediaKind get danmakuMediaKind;
+  void updateDanmakuSpeed();
+  void cancelAutomaticDanmakuLoad();
 }
 
 /// 统一「片源与清晰度」抽屉中的单条片源候选视图模型（影视与动漫共用）。
@@ -108,6 +119,7 @@ abstract interface class PlayerSourceSwitchingFeatures {
 abstract class PlayerPresentationContext {
   PlayerControlsController get controls;
   AnimePlayerFeatures? get animeFeatures;
+  PlayerDanmakuFeatures? get danmakuFeatures => null;
   PlayerSourceSwitchingFeatures? get sourceSwitchingFeatures => null;
   MediaKind? get mediaKind => null;
   bool get isMovie => mediaKind == MediaKind.movie;

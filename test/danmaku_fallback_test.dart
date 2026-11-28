@@ -1,15 +1,99 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
+import 'package:kazumi/modules/media/media_models.dart';
+import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/request/apis/bilibili_danmaku_api.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/services/storage/settings_keys.dart';
 
 void main() {
-  group('DanmakuApi.normalizeSearchKeyword', () {
+  group('DanmakuApi.normalizeSearchKeyword & buildSearchCandidates', () {
     test('strips trailing Chinese and EP episode suffixes', () {
       expect(DanmakuApi.normalizeSearchKeyword('葬送的芙莉莲 第01集'), '葬送的芙莉莲');
       expect(DanmakuApi.normalizeSearchKeyword('鬼灭之刃 EP12'), '鬼灭之刃');
       expect(DanmakuApi.normalizeSearchKeyword('  进击的巨人  '), '进击的巨人');
+    });
+
+    test('cleans quality/dubbing/year tags and deduplicates candidates', () {
+      expect(
+        DanmakuApi.buildSearchCandidates([
+          '流浪地球2 (2023) 4K',
+          '流浪地球2 HD',
+          '狂飙 第1部 (2023) 国语',
+        ]),
+        [
+          '流浪地球2',
+          '狂飙 第1部',
+          '狂飙',
+        ],
+      );
+    });
+  });
+
+  group('DanmakuApi.normalizeCustomBaseUrl', () {
+    test('normalizes valid http/https URLs and strips trailing /api/v2', () {
+      expect(
+        DanmakuApi.normalizeCustomBaseUrl(' https://dm.example.com/ '),
+        'https://dm.example.com',
+      );
+      expect(
+        DanmakuApi.normalizeCustomBaseUrl('https://dm.example.com/token/api/v2/'),
+        'https://dm.example.com/token',
+      );
+      expect(
+        DanmakuApi.normalizeCustomBaseUrl('http://127.0.0.1:9321/api/v2'),
+        'http://127.0.0.1:9321',
+      );
+    });
+
+    test('rejects invalid or non-http schemes', () {
+      expect(DanmakuApi.normalizeCustomBaseUrl(''), '');
+      expect(DanmakuApi.normalizeCustomBaseUrl('ftp://example.com'), '');
+      expect(DanmakuApi.normalizeCustomBaseUrl('not-a-url'), '');
+    });
+  });
+
+  group('Danmaku response catalog & inline episodes', () {
+    test('propagates catalog and parses inline episodes', () {
+      final search = DanmakuSearchResponse.fromJson(
+        {
+          'hasMore': false,
+          'animes': [
+            {
+              'animeId': 42,
+              'animeTitle': '测试作品',
+              'typeDescription': '电视剧',
+              'episodes': [
+                {'episodeId': 4201, 'episodeTitle': '第1集'},
+              ],
+            },
+          ],
+        },
+        catalog: DanmakuCatalog.custom,
+      );
+      expect(search.animes, hasLength(1));
+      expect(search.animes.first.catalog, DanmakuCatalog.custom);
+      expect(search.animes.first.inlineEpisodes, hasLength(1));
+      expect(search.animes.first.inlineEpisodes.first.catalog, DanmakuCatalog.custom);
+      expect(search.animes.first.inlineEpisodes.first.episodeId, 4201);
+
+      final epResp = DanmakuEpisodeResponse.fromJson(
+        {
+          'bangumi': {
+            'animeId': 42,
+            'episodes': [
+              {'episodeId': 4202, 'episodeTitle': '第2集'},
+            ],
+          },
+          'errorCode': 0,
+          'success': true,
+          'errorMessage': '',
+        },
+        catalog: DanmakuCatalog.custom,
+      );
+      expect(epResp.bangumiId, 42);
+      expect(epResp.episodes.single.catalog, DanmakuCatalog.custom);
     });
   });
 
@@ -63,6 +147,46 @@ void main() {
       expect(picked?.animeId, 2);
     });
 
+    test('prefers media kind affinity and rejects derivative noise titles', () {
+      const tvCandidates = [
+        DanmakuSearchAnime(
+          animeId: 101,
+          animeTitle: '【一口气看完】《甄嬛传规则怪谈》',
+          typeDescription: '电视剧',
+          catalog: BilibiliDanmakuApi.catalog,
+        ),
+      ];
+      expect(
+        BilibiliDanmakuApi.selectBestAnime(
+          tvCandidates,
+          '甄嬛传',
+          preferredKind: MediaKind.tv,
+        ),
+        isNull,
+      );
+
+      const movieCandidates = [
+        DanmakuSearchAnime(
+          animeId: 201,
+          animeTitle: '流浪地球',
+          typeDescription: '番剧',
+          catalog: BilibiliDanmakuApi.catalog,
+        ),
+        DanmakuSearchAnime(
+          animeId: 202,
+          animeTitle: '流浪地球',
+          typeDescription: '电影',
+          catalog: BilibiliDanmakuApi.catalog,
+        ),
+      ];
+      final pickedMovie = BilibiliDanmakuApi.selectBestAnime(
+        movieCandidates,
+        '流浪地球',
+        preferredKind: MediaKind.movie,
+      );
+      expect(pickedMovie?.animeId, 202);
+    });
+
     test('returns null when no candidate matches keyword', () {
       const candidates = [
         DanmakuSearchAnime(
@@ -99,6 +223,26 @@ void main() {
       expect(BilibiliDanmakuApi.matchEpisode(episodes, 2)?.episodeId, 102);
     });
 
+    test('movie matching skips trailers and prefers feature film', () {
+      final movieEpisodes = [
+        DanmakuEpisode(
+          episodeId: 301,
+          episodeTitle: '终极预告 (预告)',
+          catalog: BilibiliDanmakuApi.catalog,
+        ),
+        DanmakuEpisode(
+          episodeId: 302,
+          episodeTitle: '正片',
+          catalog: BilibiliDanmakuApi.catalog,
+        ),
+      ];
+      expect(
+        BilibiliDanmakuApi.matchEpisode(movieEpisodes, 1, isMovie: true)
+            ?.episodeId,
+        302,
+      );
+    });
+
     test('falls back to 1-based index when titles have no episode number', () {
       final episodes = [
         DanmakuEpisode(
@@ -114,6 +258,23 @@ void main() {
       ];
       expect(BilibiliDanmakuApi.matchEpisode(episodes, 2)?.episodeId, 202);
       expect(BilibiliDanmakuApi.matchEpisode(episodes, 3), isNull);
+    });
+  });
+
+  group('Default settings & controller safety', () {
+    test('danmakuEnabledByDefault defaults to true', () {
+      expect(SettingsKeys.danmakuEnabledByDefault.defaultValue, isTrue);
+    });
+
+    test('PlayerDanmakuController canvas helpers are safe before attach', () {
+      final controller = PlayerDanmakuController(isLocalPlayback: () => false);
+      expect(controller.hasCanvasController, isFalse);
+      expect(controller.isCanvasRunning, isFalse);
+      controller.clearAndInvalidateScheduledDanmakus();
+      controller.clearCanvas();
+      controller.pauseCanvas();
+      controller.resumeCanvas();
+      controller.updateDanmakuSpeed(1.5);
     });
   });
 }

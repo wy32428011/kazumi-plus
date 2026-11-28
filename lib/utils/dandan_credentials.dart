@@ -1,20 +1,50 @@
 import 'dart:convert';
 import 'dart:io';
 
-// 编译期 --dart-define 优先。本地调试可把同一对键放进项目根目录的
-// .kazumi_build_defines.env（JSON 或 KEY=VALUE），避免未注入凭证时搜索直接 403。
+import 'package:kazumi/services/storage/storage.dart';
+
+// 用户设置页填写的凭证优先；其次是编译期 --dart-define，
+// 最后回退环境变量与项目根目录 / 可执行文件目录的 .kazumi_build_defines.env。
 const _compileTimeAppId = String.fromEnvironment('DANDANAPI_APPID');
 const _compileTimeAppSecret = String.fromEnvironment('DANDANAPI_KEY');
 
 class _DandanCredentialStore {
-  String appId = _compileTimeAppId;
-  String appSecret = _compileTimeAppSecret;
+  String appId = '';
+  String appSecret = '';
   var _loaded = false;
+
+  void reload() {
+    _loaded = false;
+    load();
+  }
 
   void load() {
     if (_loaded) return;
     _loaded = true;
-    if (appId.isNotEmpty && appSecret.isNotEmpty) return;
+    appId = '';
+    appSecret = '';
+
+    try {
+      final storedId = GStorage.getSetting<String>(
+        SettingsKeys.danmakuDandanAppId,
+      ).trim();
+      final storedSecret = GStorage.getSetting<String>(
+        SettingsKeys.danmakuDandanAppSecret,
+      ).trim();
+      if (storedId.isNotEmpty && storedSecret.isNotEmpty) {
+        appId = storedId;
+        appSecret = storedSecret;
+        return;
+      }
+    } catch (_) {
+      // 单元测试或 Storage 未初始化时回退编译期 / 环境变量。
+    }
+
+    if (_compileTimeAppId.isNotEmpty && _compileTimeAppSecret.isNotEmpty) {
+      appId = _compileTimeAppId;
+      appSecret = _compileTimeAppSecret;
+      return;
+    }
 
     final envId = Platform.environment['DANDANAPI_APPID'] ?? '';
     final envSecret = Platform.environment['DANDANAPI_KEY'] ?? '';
@@ -84,4 +114,8 @@ Map<String, String> get dandanCredentials {
 bool get dandanCredentialsConfigured {
   _store.load();
   return _store.appId.isNotEmpty && _store.appSecret.isNotEmpty;
+}
+
+void reloadDandanCredentials() {
+  _store.reload();
 }

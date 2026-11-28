@@ -98,6 +98,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
       widget.videoPageController;
   late final PlayerControlsController playerController;
   AnimePlayerFeatures? get _anime => videoPageController.animeFeatures;
+  PlayerDanmakuFeatures? get _danmaku => videoPageController.danmakuFeatures;
   final TextEditingController textController = TextEditingController();
   final FocusNode textFieldFocus = FocusNode();
 
@@ -124,11 +125,26 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   }
 
   Future<void> _submitDanmakuText(String message) async {
-    if (_anime == null) return;
+    final danmakuFeatures = _danmaku;
+    if (danmakuFeatures == null) return;
     textFieldFocus.unfocus();
 
     if (message.trim().isEmpty) {
       KazumiDialog.showToast(message: '弹幕内容为空');
+      return;
+    }
+    if (message.length > 100) {
+      KazumiDialog.showToast(message: '弹幕内容过长');
+      return;
+    }
+
+    if (_anime == null) {
+      widget.keyboardFocus.requestFocus();
+      if (!danmakuFeatures.danmaku.hasCanvasController) return;
+      danmakuFeatures.danmaku.canvasController.addDanmaku(
+        DanmakuContentItem(message, selfSend: true),
+      );
+      textController.clear();
       return;
     }
 
@@ -138,12 +154,9 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     }
 
     widget.keyboardFocus.requestFocus();
-    if (_anime!.controller.danmaku.danDanmakus.isEmpty) {
+    if (danmakuFeatures.danmaku.danDanmakus.isEmpty &&
+        destination != DanmakuDestination.chatRoom) {
       KazumiDialog.showToast(message: '当前剧集不支持弹幕发送的说');
-      return;
-    }
-    if (message.length > 100) {
-      KazumiDialog.showToast(message: '弹幕内容过长');
       return;
     }
 
@@ -155,21 +168,25 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
 
       final sender =
           _anime!.controller.syncplay.syncplayController?.username ?? '我';
-      _anime!.controller.danmaku.canvasController.addDanmaku(
-        DanmakuContentItem(
-          '$sender：$message',
-          color: Colors.orange,
-          isColorful: true,
-          type: DanmakuItemType.bottom,
-          extra: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+      if (danmakuFeatures.danmaku.hasCanvasController) {
+        danmakuFeatures.danmaku.canvasController.addDanmaku(
+          DanmakuContentItem(
+            '$sender：$message',
+            color: Colors.orange,
+            isColorful: true,
+            type: DanmakuItemType.bottom,
+            extra: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+      }
       unawaited(_anime!.controller.sendSyncPlayChatMessage(message));
     } else {
       // This provider has no send API; display a local echo.
-      _anime!.controller.danmaku.canvasController.addDanmaku(
-        DanmakuContentItem(message, selfSend: true),
-      );
+      if (danmakuFeatures.danmaku.hasCanvasController) {
+        danmakuFeatures.danmaku.canvasController.addDanmaku(
+          DanmakuContentItem(message, selfSend: true),
+        );
+      }
     }
     textController.clear();
   }
@@ -177,6 +194,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   Widget get _danmakuTextField {
     return Observer(
       builder: (context) {
+        final danmakuOn = _danmaku?.danmaku.danmakuOn ?? false;
         return PlayerPanelHoldFocusRegion(
           acquirePlayerPanelHold: widget.acquirePlayerPanelHold,
           child: Container(
@@ -193,13 +211,11 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
               controller: textController,
               textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
-                enabled: _anime!.controller.danmaku.danmakuOn,
+                enabled: danmakuOn,
                 filled: true,
                 fillColor: Colors.white38,
                 floatingLabelBehavior: FloatingLabelBehavior.never,
-                hintText: _anime!.controller.danmaku.danmakuOn
-                    ? '发个友善的弹幕见证当下'
-                    : '已关闭弹幕',
+                hintText: danmakuOn ? '发个友善的弹幕见证当下' : '已关闭弹幕',
                 hintStyle: TextStyle(
                   fontSize: _desktop ? 15 : 13,
                   color: Colors.white60,
@@ -224,10 +240,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                         unawaited(_submitDanmakuText(textController.text));
                       },
                       style: TextButton.styleFrom(
-                        foregroundColor: _anime!.controller.danmaku.danmakuOn
+                        foregroundColor: danmakuOn
                             ? Theme.of(context).colorScheme.onPrimaryContainer
                             : Colors.white60,
-                        backgroundColor: _anime!.controller.danmaku.danmakuOn
+                        backgroundColor: danmakuOn
                             ? Theme.of(context).colorScheme.primaryContainer
                             : Theme.of(context).disabledColor,
                         shape: RoundedRectangleBorder(
@@ -342,10 +358,12 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   }
 
   Widget _buildDanmakuToggleButton(BuildContext context) {
+    final danmakuFeatures = _danmaku;
+    if (danmakuFeatures == null) return const SizedBox.shrink();
     return Observer(
       builder: (context) {
-        final danmakuLoading = _anime!.controller.danmaku.danmakuLoading;
-        final danmakuOn = _anime!.controller.danmaku.danmakuOn;
+        final danmakuLoading = danmakuFeatures.danmaku.danmakuLoading;
+        final danmakuOn = danmakuFeatures.danmaku.danmakuOn;
         return IconButton(
           color: Colors.white,
           icon: danmakuLoading
@@ -569,13 +587,16 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   );
 
   void _showDanmakuSettings() {
-    if (_anime == null) return;
+    final danmakuFeatures = _danmaku;
+    if (danmakuFeatures == null || !danmakuFeatures.danmaku.hasCanvasController) {
+      return;
+    }
     showDanmakuSettingsSheet(
       context: context,
-      danmakuController: _anime!.controller.danmaku.canvasController,
-      onUpdateDanmakuSpeed: _anime!.controller.updateDanmakuSpeed,
+      danmakuController: danmakuFeatures.danmaku.canvasController,
+      onUpdateDanmakuSpeed: danmakuFeatures.updateDanmakuSpeed,
       onTimelineOffsetChanged:
-          _anime!.controller.danmaku.clearAndInvalidateScheduledDanmakus,
+          danmakuFeatures.danmaku.clearAndInvalidateScheduledDanmakus,
     );
   }
 
@@ -738,26 +759,29 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     children: [
       if (_desktop)
         Expanded(
-          child: _anime == null
+          child: _danmaku == null
               ? const SizedBox.shrink()
               : _desktopDanmakuControls,
         ),
-      if (!_desktop && _anime != null) ...[
-        IconButton(
-          color: Colors.white,
-          icon: _anime!.controller.danmaku.danmakuOn
-              ? _danmakuOnIcon(context)
-              : _cachedDanmakuOffIcon,
-          onPressed: widget.handleDanmaku,
-          tooltip: _anime!.controller.danmaku.danmakuOn ? '关闭弹幕' : '打开弹幕',
+      if (!_desktop && _danmaku != null) ...[
+        _buildDanmakuToggleButton(context),
+        Expanded(
+          child: Observer(
+            builder: (context) {
+              if (!_danmaku!.danmaku.danmakuOn) {
+                return const SizedBox.shrink();
+              }
+              return Row(
+                children: [
+                  _danmakuSettingsButton,
+                  Expanded(child: _danmakuTextField),
+                ],
+              );
+            },
+          ),
         ),
-        if (_anime!.controller.danmaku.danmakuOn) ...[
-          _danmakuSettingsButton,
-          Expanded(child: _danmakuTextField),
-        ] else
-          const Spacer(),
       ],
-      if (!_desktop && _anime == null) const Spacer(),
+      if (!_desktop && _danmaku == null) const Spacer(),
       _buildSourceQualityButton(),
       _menuButton(
         child: const Text('超分辨率', style: TextStyle(color: Colors.white)),
@@ -947,7 +971,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     color: Colors.white,
                   ),
                 ),
-              if (compact && _anime != null) _buildDanmakuToggleButton(context),
+              if (compact && _danmaku != null) _buildDanmakuToggleButton(context),
               videoPageController.buildCollectionButton(
                 context,
                 widget.acquirePlayerPanelHold,
@@ -985,12 +1009,12 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     ),
                     if (_anime != null) _syncPlayMenuItem,
                   ],
-                  if (_anime != null)
+                  if (_danmaku != null)
                     KazumiMenuItem(
                       onPressed: widget.showDanmakuSwitch,
                       label: '弹幕切换',
                     ),
-                  if (compact && _anime != null) _danmakuSettingsMenuItem,
+                  if (compact && _danmaku != null) _danmakuSettingsMenuItem,
                   KazumiMenuItem(
                     onPressed: widget.showVideoInfo,
                     label: '视频详情',

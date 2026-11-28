@@ -2,6 +2,7 @@
 
 import 'package:canvas_danmaku/canvas_danmaku.dart' as canvas;
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/pages/download/download_target.dart';
 import 'package:kazumi/request/apis/bilibili_danmaku_api.dart';
@@ -14,8 +15,13 @@ import 'package:kazumi/utils/danmaku.dart';
 
 part 'player_danmaku_controller.g.dart';
 
-class PlayerDanmakuController = _PlayerDanmakuController
-    with _$PlayerDanmakuController;
+class PlayerDanmakuController extends _PlayerDanmakuController
+    with _$PlayerDanmakuController {
+  PlayerDanmakuController({
+    required super.isLocalPlayback,
+    super.downloadController,
+  });
+}
 
 enum DanmakuLoadStatus {
   success,
@@ -89,13 +95,39 @@ class DanmakuTimeline {
 abstract class _PlayerDanmakuController with Store {
   _PlayerDanmakuController({
     required this.isLocalPlayback,
-    required this.downloadController,
+    this.downloadController,
   });
 
   final bool Function() isLocalPlayback;
-  final DownloadController downloadController;
+  final DownloadController? downloadController;
 
-  late canvas.DanmakuController canvasController;
+  canvas.DanmakuController? _canvasController;
+
+  canvas.DanmakuController get canvasController => _canvasController!;
+
+  set canvasController(canvas.DanmakuController controller) {
+    _canvasController = controller;
+  }
+
+  bool get hasCanvasController => _canvasController != null;
+
+  bool get isCanvasRunning => _canvasController?.running ?? false;
+
+  void attachCanvasController(canvas.DanmakuController controller) {
+    _canvasController = controller;
+  }
+
+  void clearCanvas() {
+    _canvasController?.clear();
+  }
+
+  void pauseCanvas() {
+    _canvasController?.pause();
+  }
+
+  void resumeCanvas() {
+    _canvasController?.resume();
+  }
 
   final Map<int, List<DanmakuEntry>> danDanmakus = {};
   @observable
@@ -109,8 +141,11 @@ abstract class _PlayerDanmakuController with Store {
   int get scheduledDanmakuGeneration => _scheduledDanmakuGeneration;
 
   double get timelineOffsetSeconds {
-    final offset = GStorage.getSetting(SettingsKeys.danmakuTimeOffset);
-    return offset;
+    try {
+      return GStorage.getSetting(SettingsKeys.danmakuTimeOffset);
+    } catch (_) {
+      return 0.0;
+    }
   }
 
   int? resolveDanmakuSecond(Duration playbackPosition) {
@@ -135,7 +170,7 @@ abstract class _PlayerDanmakuController with Store {
 
   void clearAndInvalidateScheduledDanmakus() {
     _scheduledDanmakuGeneration++;
-    canvasController.clear();
+    _canvasController?.clear();
   }
 
   // Apply fetched data only after VideoPageController validates the session.
@@ -158,6 +193,28 @@ abstract class _PlayerDanmakuController with Store {
       episode,
       fallbackTitles: fallbackTitles,
     );
+  }
+
+  /// 为电视剧 / 电影等非 Bangumi 会话按标题和集号拉取公开弹幕。
+  Future<DanmakuLoadResult> fetchMediaDanmaku({
+    required List<String> titles,
+    required int episodeNumber,
+    required MediaKind mediaKind,
+  }) async {
+    try {
+      final list = await DanmakuApi.fetchDanmakuByTitles(
+        titles,
+        episodeNumber,
+        mediaKind: mediaKind,
+      );
+      return DanmakuLoadResult.success(danmakus: list, bangumiID: 0);
+    } catch (e) {
+      KazumiLogger().w(
+        'PlayerDanmakuController: failed to fetch media danmaku',
+        error: e,
+      );
+      return DanmakuLoadResult.failed(bangumiID: 0);
+    }
   }
 
   @action
@@ -200,11 +257,19 @@ abstract class _PlayerDanmakuController with Store {
     int episode, {
     List<String> fallbackTitles = const [],
   }) async {
+    final downloader = downloadController;
+    if (downloader == null) {
+      return await _fetchDanDanmakuByBgmBangumiID(
+        bangumiId,
+        episode,
+        fallbackTitles: fallbackTitles,
+      );
+    }
     KazumiLogger().i(
         'PlayerController: attempting to load cached danmaku for episode $episode');
     var nextBangumiID = bangumiID;
     try {
-      final cachedDanmakus = await downloadController.getCachedDanmakus(
+      final cachedDanmakus = await downloader.getCachedDanmakus(
         bangumiId,
         pluginName,
         episode,
@@ -236,7 +301,7 @@ abstract class _PlayerDanmakuController with Store {
           KazumiLogger().i(
               'PlayerController: fetched ${onlineResult.danmakus.length} danmakus online');
           _saveDanmakuToCache(
-            downloadController,
+            downloader,
             bangumiId,
             pluginName,
             episode,
@@ -285,6 +350,40 @@ abstract class _PlayerDanmakuController with Store {
         'PlayerController: attempting to get danmaku [BgmBangumiID] $bgmBangumiID');
     var nextBangumiID = bangumiID;
     var dandanFailed = false;
+
+    if (DanmakuApi.customApiConfigured && fallbackTitles.isNotEmpty) {
+      try {
+        final candidates = DanmakuApi.buildSearchCandidates(fallbackTitles);
+        for (final keyword in candidates) {
+          final searchRes = await DanmakuApi.searchCustomAnimes(keyword);
+          final anime = BilibiliDanmakuApi.selectBestAnime(
+            searchRes.animes,
+            keyword,
+            preferredKind: MediaKind.anime,
+          );
+          if (anime == null) continue;
+          final episodes = await DanmakuApi.getCustomEpisodes(
+            anime.animeId,
+            fallback: anime.inlineEpisodes,
+          );
+          final matched = BilibiliDanmakuApi.matchEpisode(episodes, episode);
+          if (matched == null) continue;
+          final entries = await DanmakuApi.getCustomComments(matched.episodeId);
+          if (entries.isNotEmpty) {
+            return DanmakuLoadResult.success(
+              danmakus: entries,
+              bangumiID: nextBangumiID,
+            );
+          }
+        }
+      } catch (e) {
+        KazumiLogger().w(
+          'PlayerController: custom danmaku lookup failed',
+          error: e,
+        );
+      }
+    }
+
     if (dandanCredentialsConfigured) {
       try {
         nextBangumiID =
@@ -313,8 +412,9 @@ abstract class _PlayerDanmakuController with Store {
     if (fallbackTitles.isNotEmpty) {
       try {
         final fallback = await BilibiliDanmakuApi.fetchEpisodeComments(
-          fallbackTitles,
+          DanmakuApi.buildSearchCandidates(fallbackTitles),
           episode,
+          mediaKind: MediaKind.anime,
         );
         return DanmakuLoadResult.success(
           danmakus: fallback,
@@ -370,8 +470,11 @@ abstract class _PlayerDanmakuController with Store {
   }
 
   void addDanmakus(List<DanmakuEntry> danmakus) {
-    final bool danmakuDeduplicationEnable =
-        GStorage.getSetting(SettingsKeys.danmakuDeduplication);
+    var danmakuDeduplicationEnable = false;
+    try {
+      danmakuDeduplicationEnable =
+          GStorage.getSetting(SettingsKeys.danmakuDeduplication);
+    } catch (_) {}
 
     final List<DanmakuEntry> listToAdd = danmakuDeduplicationEnable
         ? mergeDuplicateDanmakus(danmakus, timeWindowSeconds: 5)
@@ -384,11 +487,18 @@ abstract class _PlayerDanmakuController with Store {
   }
 
   void updateDanmakuSpeed(double playerSpeed) {
-    final baseDuration = GStorage.getSetting(SettingsKeys.danmakuDuration);
-    final followSpeed = GStorage.getSetting(SettingsKeys.danmakuFollowSpeed);
+    final controller = _canvasController;
+    if (controller == null) return;
+
+    var baseDuration = 8.0;
+    var followSpeed = true;
+    try {
+      baseDuration = GStorage.getSetting(SettingsKeys.danmakuDuration);
+      followSpeed = GStorage.getSetting(SettingsKeys.danmakuFollowSpeed);
+    } catch (_) {}
 
     final duration = followSpeed ? (baseDuration / playerSpeed) : baseDuration;
-    canvasController
-        .updateOption(canvasController.option.copyWith(duration: duration));
+    controller
+        .updateOption(controller.option.copyWith(duration: duration));
   }
 }

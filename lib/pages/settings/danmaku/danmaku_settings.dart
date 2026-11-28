@@ -4,7 +4,9 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_ch_convert_tile.dart';
+import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/dandan_credentials.dart';
 
 class DanmakuSettingsPage extends StatefulWidget {
   const DanmakuSettingsPage({super.key});
@@ -21,6 +23,7 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
   late double defaultDanmakuDuration;
   late double defaultDanmakuLineHeight;
   late double defaultdanmakuBorderSize;
+  late bool danmakuEnabledByDefault;
   late bool danmakuBorder;
   late bool danmakuTop;
   late bool danmakuBottom;
@@ -32,6 +35,8 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
   late bool danmakuGamerSource;
   late bool danmakuDanDanSource;
   late bool danmakuFollowSpeed;
+  late String danmakuCustomApiUrl;
+  late String danmakuDandanAppId;
 
   @override
   void didChangeDependencies() {
@@ -53,6 +58,8 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
     defaultDanmakuDuration = GStorage.getSetting(SettingsKeys.danmakuDuration);
     defaultDanmakuLineHeight =
         GStorage.getSetting(SettingsKeys.danmakuLineHeight);
+    danmakuEnabledByDefault =
+        GStorage.getSetting<bool>(SettingsKeys.danmakuEnabledByDefault);
     danmakuBorder = GStorage.getSetting(SettingsKeys.danmakuBorder);
     defaultdanmakuBorderSize =
         GStorage.getSetting(SettingsKeys.danmakuBorderSize);
@@ -71,6 +78,185 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
         GStorage.getSetting<bool>(SettingsKeys.danmakuDanDanSource);
     danmakuFollowSpeed =
         GStorage.getSetting<bool>(SettingsKeys.danmakuFollowSpeed);
+    danmakuCustomApiUrl =
+        GStorage.getSetting<String>(SettingsKeys.danmakuCustomApiUrl);
+    danmakuDandanAppId =
+        GStorage.getSetting<String>(SettingsKeys.danmakuDandanAppId);
+  }
+
+  Future<void> _editCustomApiUrl() async {
+    final controller = TextEditingController(text: danmakuCustomApiUrl);
+    String? errorText;
+    final saved = await KazumiDialog.show<bool>(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('自定义弹幕 API'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '填写兼容弹弹Play v2 的服务基址（如自建 danmaku_api），留空表示禁用。',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(
+                  hintText: 'https://example.com',
+                  errorText: errorText,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => KazumiDialog.dismiss(popWith: false),
+              child: const Text('取消'),
+            ),
+            if (danmakuCustomApiUrl.isNotEmpty)
+              TextButton(
+                onPressed: () async {
+                  await GStorage.putSetting<String>(
+                    SettingsKeys.danmakuCustomApiUrl,
+                    '',
+                  );
+                  if (context.mounted) {
+                    KazumiDialog.dismiss(popWith: true);
+                  }
+                },
+                child: const Text('清空'),
+              ),
+            TextButton(
+              onPressed: () async {
+                final raw = controller.text.trim();
+                if (raw.isEmpty) {
+                  await GStorage.putSetting<String>(
+                    SettingsKeys.danmakuCustomApiUrl,
+                    '',
+                  );
+                  if (context.mounted) {
+                    KazumiDialog.dismiss(popWith: true);
+                  }
+                  return;
+                }
+                final normalized = DanmakuApi.normalizeCustomBaseUrl(raw);
+                if (normalized.isEmpty) {
+                  setDialogState(
+                    () => errorText = '请输入有效的 http:// 或 https:// 地址',
+                  );
+                  return;
+                }
+                await GStorage.putSetting<String>(
+                  SettingsKeys.danmakuCustomApiUrl,
+                  normalized,
+                );
+                if (context.mounted) {
+                  KazumiDialog.dismiss(popWith: true);
+                }
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (saved == true && mounted) {
+      setState(_loadSettingsFromStorage);
+      KazumiDialog.showToast(message: '已更新自定义弹幕 API');
+    }
+  }
+
+  Future<void> _editDandanCredentials() async {
+    final idController = TextEditingController(text: danmakuDandanAppId);
+    final secretController = TextEditingController(
+      text: GStorage.getSetting<String>(SettingsKeys.danmakuDandanAppSecret),
+    );
+    String? errorText;
+    final saved = await KazumiDialog.show<bool>(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('弹弹Play API 凭证'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('填写后优先使用你自己的 AppId / AppSecret 请求官方弹弹Play 弹幕库。'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: idController,
+                decoration: const InputDecoration(labelText: 'AppId'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: secretController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'AppSecret',
+                  errorText: errorText,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => KazumiDialog.dismiss(popWith: false),
+              child: const Text('取消'),
+            ),
+            if (danmakuDandanAppId.isNotEmpty)
+              TextButton(
+                onPressed: () async {
+                  await GStorage.putSetting<String>(
+                    SettingsKeys.danmakuDandanAppId,
+                    '',
+                  );
+                  await GStorage.putSetting<String>(
+                    SettingsKeys.danmakuDandanAppSecret,
+                    '',
+                  );
+                  reloadDandanCredentials();
+                  if (context.mounted) {
+                    KazumiDialog.dismiss(popWith: true);
+                  }
+                },
+                child: const Text('清空'),
+              ),
+            TextButton(
+              onPressed: () async {
+                final id = idController.text.trim();
+                final secret = secretController.text.trim();
+                if ((id.isEmpty) != (secret.isEmpty)) {
+                  setDialogState(
+                    () => errorText = 'AppId 与 AppSecret 需同时填写或同时留空',
+                  );
+                  return;
+                }
+                await GStorage.putSetting<String>(
+                  SettingsKeys.danmakuDandanAppId,
+                  id,
+                );
+                await GStorage.putSetting<String>(
+                  SettingsKeys.danmakuDandanAppSecret,
+                  secret,
+                );
+                reloadDandanCredentials();
+                if (context.mounted) {
+                  KazumiDialog.dismiss(popWith: true);
+                }
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    idController.dispose();
+    secretController.dispose();
+    if (saved == true && mounted) {
+      setState(_loadSettingsFromStorage);
+      KazumiDialog.showToast(message: '已更新弹弹Play 凭证');
+    }
   }
 
   Future<void> resetDanmakuSettings() async {
@@ -157,6 +343,41 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
           SettingsSection(
             title: Text('弹幕来源'),
             tiles: [
+              SettingsTile.switchTile(
+                leading: Icons.subtitles_outlined,
+                onToggle: (value) async {
+                  danmakuEnabledByDefault = value ?? !danmakuEnabledByDefault;
+                  await GStorage.putSetting<bool>(
+                      SettingsKeys.danmakuEnabledByDefault,
+                      danmakuEnabledByDefault);
+                  setState(() {});
+                },
+                title: const Text('播放时默认开启弹幕'),
+                description: const Text('加载到弹幕后自动在视频画面中显示'),
+                initialValue: danmakuEnabledByDefault,
+              ),
+              SettingsTile(
+                leading: Icons.link_rounded,
+                title: const Text('自定义弹幕 API'),
+                description: Text(
+                  danmakuCustomApiUrl.isEmpty
+                      ? '未配置（可选，支持兼容弹弹Play v2 接口）'
+                      : danmakuCustomApiUrl,
+                ),
+                onPressed: (_) => _editCustomApiUrl(),
+              ),
+              SettingsTile(
+                leading: Icons.key_rounded,
+                title: const Text('弹弹Play API 凭证'),
+                description: Text(
+                  danmakuDandanAppId.isNotEmpty
+                      ? '已配置自定义凭证 ($danmakuDandanAppId)'
+                      : (dandanCredentialsConfigured
+                          ? '已使用内置或环境变量凭证'
+                          : '未配置（将自动回退 B站公开弹幕）'),
+                ),
+                onPressed: (_) => _editDandanCredentials(),
+              ),
               SettingsTile.switchTile(
                 leading: Icons.live_tv_rounded,
                 onToggle: (value) async {

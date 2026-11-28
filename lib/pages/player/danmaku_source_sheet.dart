@@ -15,6 +15,7 @@ import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/request/apis/bilibili_danmaku_api.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
@@ -27,16 +28,18 @@ const _episodeRowExtent = 64.0;
 
 Future<void> showDanmakuSourceSheet(
   BuildContext context, {
-  required int bangumiId,
+  required String historyKey,
   required String initialKeyword,
   required PlayerDanmakuController danmakuController,
   required VoidCallback onBeforeApply,
+  MediaKind? mediaKind,
 }) async {
   Widget buildSheet(BuildContext _) => _DanmakuSourceSheet(
-        bangumiId: bangumiId,
+        historyKey: historyKey,
         initialKeyword: initialKeyword,
         danmakuController: danmakuController,
         onBeforeApply: onBeforeApply,
+        mediaKind: mediaKind,
       );
 
   if (MediaQuery.orientationOf(context) == Orientation.portrait) {
@@ -81,16 +84,18 @@ enum _SourceStep { search, anime, episode }
 
 class _DanmakuSourceSheet extends StatefulWidget {
   const _DanmakuSourceSheet({
-    required this.bangumiId,
+    required this.historyKey,
     required this.initialKeyword,
     required this.danmakuController,
     required this.onBeforeApply,
+    this.mediaKind,
   });
 
-  final int bangumiId;
+  final String historyKey;
   final String initialKeyword;
   final PlayerDanmakuController danmakuController;
   final VoidCallback onBeforeApply;
+  final MediaKind? mediaKind;
 
   @override
   State<_DanmakuSourceSheet> createState() => _DanmakuSourceSheetState();
@@ -104,7 +109,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
   final _episodeScrollController = ScrollController();
   late final List<String> _recentKeywords;
 
-  String get _historyKey => 'danmakuSearchHistory_${widget.bangumiId}';
+  String get _historyKey => widget.historyKey;
 
   _SourceStep _step = _SourceStep.search;
   List<DanmakuSearchAnime> _animes = const [];
@@ -133,7 +138,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
   Future<void> _searchAnime() async {
     final keyword = _keywordController.text.trim();
     if (keyword.isEmpty) {
-      setState(() => _error = '请输入番剧名称');
+      setState(() => _error = '请输入作品名称');
       return;
     }
 
@@ -159,13 +164,16 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       }));
     }
     try {
-      final response = await DanmakuApi.searchAnimes(keyword);
+      final response = await DanmakuApi.searchAnimes(
+        keyword,
+        preferredKind: widget.mediaKind,
+      );
       if (!mounted) return;
       setState(() {
         _loading = false;
         _animes = response.animes;
         _hasMore = response.hasMore;
-        if (response.animes.isEmpty) _error = '未找到番剧';
+        if (response.animes.isEmpty) _error = '未找到作品';
       });
     } catch (error) {
       KazumiLogger().w('Danmaku source search failed', error: error);
@@ -189,11 +197,19 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       _segmentStart = null;
     });
     try {
-      final response = anime.catalog == BilibiliDanmakuApi.catalog
-          ? null
-          : await DanmakuApi.getDanDanEpisodesByDanDanBangumiID(anime.animeId);
-      final episodes = response?.episodes ??
-          await BilibiliDanmakuApi.episodes(anime.animeId);
+      final episodes = switch (anime.catalog) {
+        DanmakuCatalog.bilibili =>
+          await BilibiliDanmakuApi.episodes(anime.animeId),
+        DanmakuCatalog.custom => await DanmakuApi.getCustomEpisodes(
+            anime.animeId,
+            fallback: anime.inlineEpisodes,
+          ),
+        _ => (await DanmakuApi.getDanDanEpisodesByDanDanBangumiID(
+            anime.animeId,
+            fallback: anime.inlineEpisodes,
+          ))
+              .episodes,
+      };
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -215,12 +231,18 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
     try {
       widget.onBeforeApply();
       widget.danmakuController.clearAndInvalidateScheduledDanmakus();
-      final hasDanmakus = episode.catalog == BilibiliDanmakuApi.catalog
-          ? await widget.danmakuController.replaceDanmakus(
-              await BilibiliDanmakuApi.comments(episode.episodeId),
-            )
-          : await widget.danmakuController
-              .getDanDanmakuByEpisodeID(episode.episodeId);
+      final hasDanmakus = switch (episode.catalog) {
+        DanmakuCatalog.bilibili =>
+          await widget.danmakuController.replaceDanmakus(
+            await BilibiliDanmakuApi.comments(episode.episodeId),
+          ),
+        DanmakuCatalog.custom =>
+          await widget.danmakuController.replaceDanmakus(
+            await DanmakuApi.getCustomComments(episode.episodeId),
+          ),
+        _ => await widget.danmakuController
+            .getDanDanmakuByEpisodeID(episode.episodeId),
+      };
       if (!mounted) return;
       widget.danmakuController.setDanmakuEnabled(hasDanmakus);
       KazumiDialog.dismiss(context: context);
@@ -232,6 +254,18 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       setState(() => _loading = false);
       KazumiDialog.showToast(message: '弹幕源切换失败');
     }
+  }
+
+  String _catalogLabel(DanmakuSearchAnime anime) {
+    final sourceLabel = switch (anime.catalog) {
+      DanmakuCatalog.custom => '自定义弹幕库',
+      DanmakuCatalog.bilibili => 'B站',
+      _ => '弹弹Play',
+    };
+    if (anime.typeDescription.isEmpty) {
+      return sourceLabel;
+    }
+    return '$sourceLabel · ${anime.typeDescription}';
   }
 
   List<DanmakuEpisode> get _visibleEpisodes {
@@ -378,7 +412,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _searchAnime(),
               decoration: InputDecoration(
-                hintText: '番剧名称',
+                hintText: '作品名称',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: value.text.isEmpty
                     ? null
@@ -497,9 +531,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
                 child: ListTile(
                   title: Text(anime.animeTitle,
                       maxLines: 2, overflow: TextOverflow.ellipsis),
-                  subtitle: anime.typeDescription.isEmpty
-                      ? null
-                      : Text(anime.typeDescription),
+                  subtitle: Text(_catalogLabel(anime)),
                   trailing: const Icon(Icons.chevron_right_rounded),
                 ),
               );
@@ -517,7 +549,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
         icon: Icons.subtitles_off_outlined,
         title: _error!,
         errMsg: '',
-        actions: [StateActionButton.tonal(onPressed: _goBack, text: '返回番剧')],
+        actions: [StateActionButton.tonal(onPressed: _goBack, text: '返回作品')],
       );
     }
     final visible = _visibleEpisodes;
@@ -594,7 +626,7 @@ class _SheetHeader extends StatelessWidget {
 
   String get title => switch (step) {
         _SourceStep.search => '选择弹幕源',
-        _SourceStep.anime => '选择番剧',
+        _SourceStep.anime => '选择作品',
         _SourceStep.episode => '选择分集',
       };
 
