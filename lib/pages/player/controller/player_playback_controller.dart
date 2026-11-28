@@ -1,10 +1,14 @@
 // ignore_for_file: library_private_types_in_public_api
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/pages/player/controller/player_debug_controller.dart';
 import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
@@ -153,6 +157,24 @@ abstract class _PlayerPlaybackController with Store {
   SuperResolutionMode superResolutionMode = SuperResolutionMode.off;
 
   @observable
+  String activeEnhancementSummary = '关闭';
+
+  MediaKind currentMediaKind = MediaKind.anime;
+  String? _activeVideoRenderer;
+  int _viewportPhysicalWidth = 0;
+  int _viewportPhysicalHeight = 0;
+  int _sourceWidth = 0;
+  int _sourceHeight = 0;
+  StreamSubscription<VideoParams>? _videoParamsSub;
+  VoidCallback? _videoRectListener;
+  VideoController? _observedRectController;
+  Timer? _viewportDebounce;
+  Timer? _dropFrameTimer;
+  int _lastSampledDropCount = 0;
+  int _consecutiveHighDropWindows = 0;
+  bool _dropDowngradeNotified = false;
+
+  @observable
   double volume = -1;
 
   /// 手势调节时的精确音量，避免 UI 节流导致累计误差
@@ -203,6 +225,13 @@ abstract class _PlayerPlaybackController with Store {
     duration = Duration.zero;
     completed = false;
     startOffset = 0;
+    _sourceWidth = 0;
+    _sourceHeight = 0;
+    _lastSampledDropCount = 0;
+    _consecutiveHighDropWindows = 0;
+    _dropDowngradeNotified = false;
+    activeEnhancementSummary = '关闭';
+    debug.resetEnhancementTelemetry();
   }
 
   /// 本次会话是否从距结尾 [nearEndWatchedThreshold] 以内的位置起播。
@@ -316,6 +345,7 @@ abstract class _PlayerPlaybackController with Store {
     bool adBlockerEnabled, {
     required bool Function() canInstall,
     int offset = 0,
+    MediaKind mediaKind = MediaKind.anime,
     VideoSourceFormat videoSourceFormat = VideoSourceFormat.auto,
     void Function(String message)? onPlaybackError,
     bool honorPlatformDecoderFallback = false,
@@ -325,6 +355,7 @@ abstract class _PlayerPlaybackController with Store {
     void Function(String cdnGroup)? onCdnGroupResolved,
   }) async {
     startOffset = offset;
+    currentMediaKind = mediaKind;
     superResolutionMode = SuperResolutionMode.fromStorageValue(
       GStorage.getSetting(SettingsKeys.defaultSuperResolutionMode),
     );
@@ -407,6 +438,7 @@ abstract class _PlayerPlaybackController with Store {
       hardwareDecoder = 'mediacodec';
       superResolutionMode = SuperResolutionMode.off;
     }
+    _activeVideoRenderer = videoRenderer;
 
     final candidate = _OwnedPlayer(
       Player(
@@ -573,6 +605,34 @@ abstract class _PlayerPlaybackController with Store {
           androidAttachSurfaceAfterVideoParameters: false,
         ),
       );
+      _attachVideoRectListener(videoController!);
+      await debug.attachFrameDropObserver(
+        player,
+        isCurrentPlayer: isCurrentPlayer,
+      );
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
+      }
+      await _videoParamsSub?.cancel();
+      _videoParamsSub = player.stream.videoParams.listen((event) {
+        if (!isCurrentPlayer(player)) return;
+        final int dw;
+        final int dh;
+        if (event.rotate == 0 || event.rotate == 180) {
+          dw = event.dw ?? 0;
+          dh = event.dh ?? 0;
+        } else {
+          dw = event.dh ?? 0;
+          dh = event.dw ?? 0;
+        }
+        if (dw <= 0 || dh <= 0) return;
+        if (_sourceWidth == dw && _sourceHeight == dh) return;
+        _sourceWidth = dw;
+        _sourceHeight = dh;
+        if (superResolutionMode != SuperResolutionMode.off) {
+          unawaited(setShader(superResolutionMode, player: player));
+        }
+      });
       player.setPlaylistMode(PlaylistMode.none);
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);
@@ -642,6 +702,7 @@ abstract class _PlayerPlaybackController with Store {
 
       return player;
     } catch (error, stackTrace) {
+      _cleanupEnhancementMonitors();
       if (identical(_ownedPlayer, candidate)) {
         cachePolicy.stopWatching();
         _ownedPlayer = null;
@@ -652,46 +713,194 @@ abstract class _PlayerPlaybackController with Store {
     }
   }
 
+  void _attachVideoRectListener(VideoController controller) {
+    _detachVideoRectListener();
+    _observedRectController = controller;
+    void updateRect() {
+      final rect = controller.rect.value;
+      if (rect == null) return;
+      debug.updateOutputDimensions(rect.width.round(), rect.height.round());
+    }
+
+    _videoRectListener = updateRect;
+    controller.rect.addListener(updateRect);
+    updateRect();
+  }
+
+  void _detachVideoRectListener() {
+    final listener = _videoRectListener;
+    final observed = _observedRectController;
+    _videoRectListener = null;
+    _observedRectController = null;
+    if (listener != null && observed != null) {
+      try {
+        observed.rect.removeListener(listener);
+      } catch (_) {}
+    }
+  }
+
+  void _cleanupEnhancementMonitors() {
+    _viewportDebounce?.cancel();
+    _viewportDebounce = null;
+    _dropFrameTimer?.cancel();
+    _dropFrameTimer = null;
+    unawaited(_videoParamsSub?.cancel());
+    _videoParamsSub = null;
+    _detachVideoRectListener();
+    _activeVideoRenderer = null;
+  }
+
+  void updateViewportPhysicalSize(int width, int height) {
+    if (width <= 0 || height <= 0) return;
+    if ((_viewportPhysicalWidth - width).abs() < 32 &&
+        (_viewportPhysicalHeight - height).abs() < 32) {
+      return;
+    }
+    _viewportPhysicalWidth = width;
+    _viewportPhysicalHeight = height;
+    if (superResolutionMode == SuperResolutionMode.off) {
+      return;
+    }
+    final player = mediaPlayer;
+    if (player == null) return;
+    _viewportDebounce?.cancel();
+    _viewportDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!isCurrentPlayer(player) ||
+          superResolutionMode == SuperResolutionMode.off) {
+        return;
+      }
+      unawaited(setShader(superResolutionMode, player: player));
+    });
+  }
+
+  void _syncDropFrameMonitor(Player player, {required bool active}) {
+    _dropFrameTimer?.cancel();
+    _dropFrameTimer = null;
+    _lastSampledDropCount = debug.droppedFrames;
+    _consecutiveHighDropWindows = 0;
+    if (!active) return;
+
+    _dropFrameTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (!isCurrentPlayer(player)) {
+        timer.cancel();
+        return;
+      }
+      if (!playing || isBuffering) {
+        _lastSampledDropCount = debug.droppedFrames;
+        return;
+      }
+      final currentDrops = debug.droppedFrames;
+      final delta = math.max(0, currentDrops - _lastSampledDropCount);
+      _lastSampledDropCount = currentDrops;
+      if (delta >= 18) {
+        _consecutiveHighDropWindows++;
+      } else {
+        _consecutiveHighDropWindows = 0;
+      }
+      final autoDowngrade = GStorage.getSetting<bool>(
+        SettingsKeys.superResolutionAutoDowngrade,
+      );
+      final nextMode = evaluateAutoDowngradeMode(
+        currentMode: superResolutionMode,
+        droppedDeltaInWindow: delta,
+        consecutiveHighDropWindows: _consecutiveHighDropWindows,
+        autoDowngradeEnabled: autoDowngrade,
+      );
+      if (nextMode != null) {
+        _consecutiveHighDropWindows = 0;
+        unawaited(setShader(nextMode, player: player));
+        if (!_dropDowngradeNotified) {
+          _dropDowngradeNotified = true;
+          KazumiDialog.showToast(
+            message: nextMode == SuperResolutionMode.off
+                ? '检测到持续丢帧，已自动关闭超分辨率以保证流畅播放'
+                : '检测到持续丢帧，已自动切换为超分辨率效率档',
+          );
+        }
+      }
+    });
+  }
+
   Future<void> setShader(SuperResolutionMode mode, {Player? player}) async {
     final currentPlayer = player ?? mediaPlayer;
     if (currentPlayer == null) return;
     try {
+      final profile = SuperResolutionContentProfile.fromStorageValue(
+        GStorage.getSetting<int>(SettingsKeys.superResolutionContentProfile),
+      );
+      final debandEnabled = GStorage.getSetting<bool>(
+        SettingsKeys.superResolutionDebandEnabled,
+      );
+      final upscaleOutputEnabled = GStorage.getSetting<bool>(
+        SettingsKeys.superResolutionUpscaleOutput,
+      );
+      final plan = buildVideoEnhancementPlan(
+        mode: mode,
+        profile: profile,
+        mediaKind: currentMediaKind,
+        debandEnabled: debandEnabled,
+        upscaleOutputEnabled: upscaleOutputEnabled,
+        isDesktop: isDesktop(),
+        isTelevision: PlatformEnvironmentService.isTelevision,
+        sourceWidth: _sourceWidth,
+        sourceHeight: _sourceHeight,
+        viewportPhysicalWidth: _viewportPhysicalWidth,
+        viewportPhysicalHeight: _viewportPhysicalHeight,
+        videoRenderer: _activeVideoRenderer,
+      );
+
       var pp = currentPlayer.platform as NativePlayer;
       await pp.waitForPlayerInitialization;
       await pp.waitForVideoControllerInitializationIfAttached;
       if (!identical(mediaPlayer, currentPlayer)) {
         return;
       }
-      switch (mode) {
-        case SuperResolutionMode.efficiency:
-          await pp.command([
-            'change-list',
-            'glsl-shaders',
-            'set',
-            buildShadersAbsolutePath(
-              shaderAssetService.shadersDirectory.path,
-              mpvAnime4KShadersLite,
-            ),
-          ]);
-          break;
-        case SuperResolutionMode.quality:
-          await pp.command([
-            'change-list',
-            'glsl-shaders',
-            'set',
-            buildShadersAbsolutePath(
-              shaderAssetService.shadersDirectory.path,
-              mpvAnime4KShaders,
-            ),
-          ]);
-          break;
-        case SuperResolutionMode.off:
-          await pp.command(['change-list', 'glsl-shaders', 'clr', '']);
-          break;
+
+      for (final entry in plan.mpvProperties.entries) {
+        await pp.setProperty(entry.key, entry.value);
+        if (!isCurrentPlayer(currentPlayer)) return;
       }
+
+      if (plan.shaderFiles.isEmpty) {
+        await pp.command(['change-list', 'glsl-shaders', 'clr', '']);
+      } else {
+        await pp.command([
+          'change-list',
+          'glsl-shaders',
+          'set',
+          buildShadersAbsolutePath(
+            shaderAssetService.shadersDirectory.path,
+            plan.shaderFiles,
+          ),
+        ]);
+      }
+      if (!isCurrentPlayer(currentPlayer)) return;
+
+      try {
+        await videoController?.setSize(
+          width: plan.targetOutputSize?.width,
+          height: plan.targetOutputSize?.height,
+        );
+      } catch (e) {
+        KazumiLogger().w(
+          'PlayerController: failed to resize output surface',
+          error: e,
+        );
+      }
+
       // 命令等待期间可能切集，旧播放器不得覆盖新会话的超分状态。
       if (!isCurrentPlayer(currentPlayer)) return;
       superResolutionMode = mode;
+      activeEnhancementSummary = plan.activeSummary;
+      debug.updateEnhancementTelemetry(
+        summary: plan.activeSummary,
+        shaders: plan.shaderFiles.join(', '),
+      );
+      _syncDropFrameMonitor(
+        currentPlayer,
+        active:
+            mode != SuperResolutionMode.off && !plan.skippedForHighResSource,
+      );
     } catch (e) {
       KazumiLogger().w('PlayerController: failed to set shader', error: e);
     }
@@ -790,6 +999,7 @@ abstract class _PlayerPlaybackController with Store {
   }
 
   Future<void> stop() async {
+    _cleanupEnhancementMonitors();
     cachePolicy.stopWatching();
     final ownedPlayer = _ownedPlayer;
     _ownedPlayer = null;

@@ -1,7 +1,7 @@
 name: kazumi
 description: "支持动漫、电视剧与电影的独立 Kazumi Plus 客户端。"
 publish_to: "none"
-version: 0.2.2+4
+version: 0.2.3+5
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -108,6 +108,8 @@ dependencies:
 dependency_overrides:
   ech_http:
     path: third_party/ech_http
+  media_kit_video:
+    path: third_party/media_kit_video
 
 dev_dependencies:
   path_provider_platform_interface: ^2.1.2
@@ -168,6 +170,7 @@ flutter:
     - assets/images/logo/
     - assets/statements/
     - licenses/ech_http/
+    - licenses/shaders/
   fonts:
     - family: MI_Sans_Regular
       fonts:

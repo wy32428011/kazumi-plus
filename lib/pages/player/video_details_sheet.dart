@@ -119,9 +119,16 @@ class _VideoDetailsSheetState extends State<_VideoDetailsSheet>
     return Observer(builder: (context) {
       final debug = playerController.debug;
       final theme = Theme.of(context);
-      final resolution = debug.playerWidth > 0 && debug.playerHeight > 0
+      final sourceResolution = debug.playerWidth > 0 && debug.playerHeight > 0
           ? '${debug.playerWidth} × ${debug.playerHeight}'
           : '等待画面';
+      final hasOutputResolution =
+          debug.outputWidth > 0 && debug.outputHeight > 0;
+      final resolution = debug.playerWidth > 0 &&
+              debug.playerHeight > 0 &&
+              hasOutputResolution
+          ? '$sourceResolution → ${debug.outputWidth} × ${debug.outputHeight}'
+          : sourceResolution;
       return ListView(
         key: const PageStorageKey('video-details-overview'),
         padding: materialBottomSheetContentPadding,
@@ -139,6 +146,15 @@ class _VideoDetailsSheetState extends State<_VideoDetailsSheet>
                 Expanded(
                     child: _metric(context, '音频码率', debug.playerAudioBitrate)),
               ]),
+              const SizedBox(height: 12),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                    child: _metric(
+                        context, '画质增强', debug.activeEnhancementSummary)),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _metric(context, '丢帧数', '${debug.droppedFrames}')),
+              ]),
             ]),
           ),
           const SizedBox(height: 24),
@@ -155,6 +171,7 @@ class _VideoDetailsSheetState extends State<_VideoDetailsSheet>
               shape: const Border(),
               collapsedShape: const Border(),
               children: [
+                _statusField(context, '着色器链', debug.activeShaders),
                 _statusField(context, '编码参数', debug.playerVideoParams),
                 _statusField(context, '轨道', debug.playerVideoTracks),
               ],

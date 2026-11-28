@@ -22,6 +22,16 @@ abstract class _PlayerDebugController with Store {
   @observable
   int playerHeight = 0;
   @observable
+  int outputWidth = 0;
+  @observable
+  int outputHeight = 0;
+  @observable
+  String activeEnhancementSummary = '关闭';
+  @observable
+  String activeShaders = '';
+  @observable
+  int droppedFrames = 0;
+  @observable
   String playerVideoParams = '';
   @observable
   String playerAudioParams = '';
@@ -45,6 +55,63 @@ abstract class _PlayerDebugController with Store {
   StreamSubscription<Track>? playerTracksSubscription;
   StreamSubscription<double?>? playerAudioBitrateSubscription;
   StreamSubscription<double?>? playerVideoBitrateSubscription;
+  NativePlayer? _observedDropPlayer;
+
+  @action
+  void updateOutputDimensions(int width, int height) {
+    if (outputWidth == width && outputHeight == height) {
+      return;
+    }
+    outputWidth = width;
+    outputHeight = height;
+  }
+
+  @action
+  void updateEnhancementTelemetry({
+    required String summary,
+    required String shaders,
+  }) {
+    activeEnhancementSummary = summary;
+    activeShaders = shaders;
+  }
+
+  @action
+  void resetEnhancementTelemetry() {
+    outputWidth = 0;
+    outputHeight = 0;
+    activeEnhancementSummary = '关闭';
+    activeShaders = '';
+    droppedFrames = 0;
+  }
+
+  Future<void> attachFrameDropObserver(
+    Player player, {
+    required bool Function(Player player) isCurrentPlayer,
+  }) async {
+    final previous = _observedDropPlayer;
+    if (previous != null && !identical(previous, player.platform)) {
+      _observedDropPlayer = null;
+      try {
+        await previous.unobserveProperty(
+          'frame-drop-count',
+          waitForInitialization: false,
+        );
+      } catch (_) {}
+    }
+    if (!isCurrentPlayer(player)) return;
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    _observedDropPlayer = platform;
+    try {
+      await platform.observeProperty('frame-drop-count', (value) async {
+        if (!isCurrentPlayer(player)) return;
+        final parsed = int.tryParse(value.trim());
+        if (parsed != null) {
+          droppedFrames = parsed;
+        }
+      });
+    } catch (_) {}
+  }
 
   Future<void> setup(
     Player player, {
@@ -113,6 +180,7 @@ abstract class _PlayerDebugController with Store {
     final tracksSubscription = playerTracksSubscription;
     final audioBitrateSubscription = playerAudioBitrateSubscription;
     final videoBitrateSubscription = playerVideoBitrateSubscription;
+    final observedDropPlayer = _observedDropPlayer;
 
     playerLogSubscription = null;
     playerWidthSubscription = null;
@@ -123,6 +191,17 @@ abstract class _PlayerDebugController with Store {
     playerTracksSubscription = null;
     playerAudioBitrateSubscription = null;
     playerVideoBitrateSubscription = null;
+    _observedDropPlayer = null;
+
+    if (observedDropPlayer != null) {
+      try {
+        await observedDropPlayer.unobserveProperty(
+          'frame-drop-count',
+          waitForInitialization: false,
+        );
+      } catch (_) {}
+    }
+    resetEnhancementTelemetry();
 
     await logSubscription?.cancel();
     await widthSubscription?.cancel();

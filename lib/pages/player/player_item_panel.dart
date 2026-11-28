@@ -784,7 +784,15 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
       if (!_desktop && _danmaku == null) const Spacer(),
       _buildSourceQualityButton(),
       _menuButton(
-        child: const Text('超分辨率', style: TextStyle(color: Colors.white)),
+        child: Observer(
+          builder: (context) {
+            final summary = playerController.playback.activeEnhancementSummary;
+            return Text(
+              summary == '关闭' ? '超分辨率' : summary,
+              style: const TextStyle(color: Colors.white),
+            );
+          },
+        ),
         items: _superResolutionItems,
       ),
       _menuButton(
@@ -1005,7 +1013,16 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     ),
                     SubmenuButton(
                       menuChildren: _superResolutionItems,
-                      child: const Text('超分辨率'),
+                      child: Observer(
+                        builder: (context) {
+                          final summary = playerController
+                              .playback
+                              .activeEnhancementSummary;
+                          return Text(
+                            summary == '关闭' ? '超分辨率' : '超分辨率 · $summary',
+                          );
+                        },
+                      ),
                     ),
                     if (_anime != null) _syncPlayMenuItem,
                   ],

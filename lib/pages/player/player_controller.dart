@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/pages/player/controller/player_debug_controller.dart';
@@ -109,6 +110,7 @@ class PlayerController implements Disposable {
         httpHeaders: params.httpHeaders,
         adBlockerEnabled: params.adBlockerEnabled,
         referer: params.referer,
+        mediaKind: MediaKind.anime,
         videoSourceFormat: params.videoSourceFormat,
         coverUrl: params.coverUrl,
       ),

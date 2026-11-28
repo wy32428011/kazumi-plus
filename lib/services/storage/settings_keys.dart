@@ -415,6 +415,26 @@ class SettingsKeys {
     false,
     group: SettingGroup.player,
   );
+  static const superResolutionContentProfile = SettingKey<int>(
+    'superResolutionContentProfile',
+    0,
+    group: SettingGroup.player,
+  );
+  static const superResolutionDebandEnabled = SettingKey<bool>(
+    'superResolutionDebandEnabled',
+    true,
+    group: SettingGroup.player,
+  );
+  static const superResolutionUpscaleOutput = SettingKey<bool>(
+    'superResolutionUpscaleOutput',
+    true,
+    group: SettingGroup.player,
+  );
+  static const superResolutionAutoDowngrade = SettingKey<bool>(
+    'superResolutionAutoDowngrade',
+    true,
+    group: SettingGroup.player,
+  );
   static const playerDisableAnimations = SettingKey<bool>(
     _SettingBoxKey.playerDisableAnimations,
     false,
@@ -669,6 +689,10 @@ class SettingsKeys {
     androidAutoEnterPIP,
     defaultSuperResolutionMode,
     disableSuperResolutionWarning,
+    superResolutionContentProfile,
+    superResolutionDebandEnabled,
+    superResolutionUpscaleOutput,
+    superResolutionAutoDowngrade,
     playerDisableAnimations,
     playerLogLevel,
     timelineNotShowAbandonedBangumis,

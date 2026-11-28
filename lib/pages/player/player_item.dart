@@ -39,6 +39,7 @@ import 'package:kazumi/services/player/timed_shutdown_service.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/services/platform/player_menu_service.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
+import 'package:kazumi/television/tv_focus.dart';
 import 'package:kazumi/television/tv_playback_controls.dart';
 
 class PlayerItem extends StatefulWidget {
@@ -1806,6 +1807,29 @@ class _PlayerItemState extends State<PlayerItem>
                   ? '片源与清晰度'
                   : '清晰度',
             ),
+          ),
+          Observer(
+            builder: (context) {
+              final disabled =
+                  videoPageController.loading ||
+                  playerController.playback.loading ||
+                  videoPageController.resumePending ||
+                  videoPageController.errorMessage != null;
+              return TvSelect<SuperResolutionMode>(
+                label: '超分',
+                value: playerController.playback.superResolutionMode,
+                options: const [
+                  (SuperResolutionMode.off, '关闭'),
+                  (SuperResolutionMode.efficiency, '效率档'),
+                  (SuperResolutionMode.quality, '质量档'),
+                ],
+                onChanged: disabled
+                    ? null
+                    : (mode) {
+                        unawaited(handleSuperResolutionChange(mode));
+                      },
+              );
+            },
           ),
           if (_danmaku != null) ...[
             Observer(

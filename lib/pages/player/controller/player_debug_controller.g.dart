@@ -9,8 +9,10 @@ part of 'player_debug_controller.dart';
 // ignore_for_file: non_constant_identifier_names, unnecessary_brace_in_string_interps, unnecessary_lambdas, prefer_expression_function_bodies, lines_longer_than_80_chars, avoid_as, avoid_annotating_with_dynamic, no_leading_underscores_for_local_identifiers
 
 mixin _$PlayerDebugController on _PlayerDebugController, Store {
-  late final _$playerLogAtom =
-      Atom(name: '_PlayerDebugController.playerLog', context: context);
+  late final _$playerLogAtom = Atom(
+    name: '_PlayerDebugController.playerLog',
+    context: context,
+  );
 
   @override
   ObservableList<String> get playerLog {
@@ -25,8 +27,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerWidthAtom =
-      Atom(name: '_PlayerDebugController.playerWidth', context: context);
+  late final _$playerWidthAtom = Atom(
+    name: '_PlayerDebugController.playerWidth',
+    context: context,
+  );
 
   @override
   int get playerWidth {
@@ -41,8 +45,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerHeightAtom =
-      Atom(name: '_PlayerDebugController.playerHeight', context: context);
+  late final _$playerHeightAtom = Atom(
+    name: '_PlayerDebugController.playerHeight',
+    context: context,
+  );
 
   @override
   int get playerHeight {
@@ -57,8 +63,104 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerVideoParamsAtom =
-      Atom(name: '_PlayerDebugController.playerVideoParams', context: context);
+  late final _$outputWidthAtom = Atom(
+    name: '_PlayerDebugController.outputWidth',
+    context: context,
+  );
+
+  @override
+  int get outputWidth {
+    _$outputWidthAtom.reportRead();
+    return super.outputWidth;
+  }
+
+  @override
+  set outputWidth(int value) {
+    _$outputWidthAtom.reportWrite(value, super.outputWidth, () {
+      super.outputWidth = value;
+    });
+  }
+
+  late final _$outputHeightAtom = Atom(
+    name: '_PlayerDebugController.outputHeight',
+    context: context,
+  );
+
+  @override
+  int get outputHeight {
+    _$outputHeightAtom.reportRead();
+    return super.outputHeight;
+  }
+
+  @override
+  set outputHeight(int value) {
+    _$outputHeightAtom.reportWrite(value, super.outputHeight, () {
+      super.outputHeight = value;
+    });
+  }
+
+  late final _$activeEnhancementSummaryAtom = Atom(
+    name: '_PlayerDebugController.activeEnhancementSummary',
+    context: context,
+  );
+
+  @override
+  String get activeEnhancementSummary {
+    _$activeEnhancementSummaryAtom.reportRead();
+    return super.activeEnhancementSummary;
+  }
+
+  @override
+  set activeEnhancementSummary(String value) {
+    _$activeEnhancementSummaryAtom.reportWrite(
+      value,
+      super.activeEnhancementSummary,
+      () {
+        super.activeEnhancementSummary = value;
+      },
+    );
+  }
+
+  late final _$activeShadersAtom = Atom(
+    name: '_PlayerDebugController.activeShaders',
+    context: context,
+  );
+
+  @override
+  String get activeShaders {
+    _$activeShadersAtom.reportRead();
+    return super.activeShaders;
+  }
+
+  @override
+  set activeShaders(String value) {
+    _$activeShadersAtom.reportWrite(value, super.activeShaders, () {
+      super.activeShaders = value;
+    });
+  }
+
+  late final _$droppedFramesAtom = Atom(
+    name: '_PlayerDebugController.droppedFrames',
+    context: context,
+  );
+
+  @override
+  int get droppedFrames {
+    _$droppedFramesAtom.reportRead();
+    return super.droppedFrames;
+  }
+
+  @override
+  set droppedFrames(int value) {
+    _$droppedFramesAtom.reportWrite(value, super.droppedFrames, () {
+      super.droppedFrames = value;
+    });
+  }
+
+  late final _$playerVideoParamsAtom = Atom(
+    name: '_PlayerDebugController.playerVideoParams',
+    context: context,
+  );
 
   @override
   String get playerVideoParams {
@@ -73,8 +175,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerAudioParamsAtom =
-      Atom(name: '_PlayerDebugController.playerAudioParams', context: context);
+  late final _$playerAudioParamsAtom = Atom(
+    name: '_PlayerDebugController.playerAudioParams',
+    context: context,
+  );
 
   @override
   String get playerAudioParams {
@@ -89,8 +193,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerPlaylistAtom =
-      Atom(name: '_PlayerDebugController.playerPlaylist', context: context);
+  late final _$playerPlaylistAtom = Atom(
+    name: '_PlayerDebugController.playerPlaylist',
+    context: context,
+  );
 
   @override
   String get playerPlaylist {
@@ -105,8 +211,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerAudioTracksAtom =
-      Atom(name: '_PlayerDebugController.playerAudioTracks', context: context);
+  late final _$playerAudioTracksAtom = Atom(
+    name: '_PlayerDebugController.playerAudioTracks',
+    context: context,
+  );
 
   @override
   String get playerAudioTracks {
@@ -121,8 +229,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerVideoTracksAtom =
-      Atom(name: '_PlayerDebugController.playerVideoTracks', context: context);
+  late final _$playerVideoTracksAtom = Atom(
+    name: '_PlayerDebugController.playerVideoTracks',
+    context: context,
+  );
 
   @override
   String get playerVideoTracks {
@@ -137,8 +247,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerAudioBitrateAtom =
-      Atom(name: '_PlayerDebugController.playerAudioBitrate', context: context);
+  late final _$playerAudioBitrateAtom = Atom(
+    name: '_PlayerDebugController.playerAudioBitrate',
+    context: context,
+  );
 
   @override
   String get playerAudioBitrate {
@@ -153,8 +265,10 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
-  late final _$playerVideoBitrateAtom =
-      Atom(name: '_PlayerDebugController.playerVideoBitrate', context: context);
+  late final _$playerVideoBitrateAtom = Atom(
+    name: '_PlayerDebugController.playerVideoBitrate',
+    context: context,
+  );
 
   @override
   String get playerVideoBitrate {
@@ -169,12 +283,64 @@ mixin _$PlayerDebugController on _PlayerDebugController, Store {
     });
   }
 
+  late final _$_PlayerDebugControllerActionController = ActionController(
+    name: '_PlayerDebugController',
+    context: context,
+  );
+
+  @override
+  void updateOutputDimensions(int width, int height) {
+    final _$actionInfo = _$_PlayerDebugControllerActionController.startAction(
+      name: '_PlayerDebugController.updateOutputDimensions',
+    );
+    try {
+      return super.updateOutputDimensions(width, height);
+    } finally {
+      _$_PlayerDebugControllerActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  void updateEnhancementTelemetry({
+    required String summary,
+    required String shaders,
+  }) {
+    final _$actionInfo = _$_PlayerDebugControllerActionController.startAction(
+      name: '_PlayerDebugController.updateEnhancementTelemetry',
+    );
+    try {
+      return super.updateEnhancementTelemetry(
+        summary: summary,
+        shaders: shaders,
+      );
+    } finally {
+      _$_PlayerDebugControllerActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  void resetEnhancementTelemetry() {
+    final _$actionInfo = _$_PlayerDebugControllerActionController.startAction(
+      name: '_PlayerDebugController.resetEnhancementTelemetry',
+    );
+    try {
+      return super.resetEnhancementTelemetry();
+    } finally {
+      _$_PlayerDebugControllerActionController.endAction(_$actionInfo);
+    }
+  }
+
   @override
   String toString() {
     return '''
 playerLog: ${playerLog},
 playerWidth: ${playerWidth},
 playerHeight: ${playerHeight},
+outputWidth: ${outputWidth},
+outputHeight: ${outputHeight},
+activeEnhancementSummary: ${activeEnhancementSummary},
+activeShaders: ${activeShaders},
+droppedFrames: ${droppedFrames},
 playerVideoParams: ${playerVideoParams},
 playerAudioParams: ${playerAudioParams},
 playerPlaylist: ${playerPlaylist},

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart' show rootBundle, AssetManifest;
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:path/path.dart' as path;
@@ -24,20 +25,29 @@ class ShaderAssetService {
         asset.startsWith('assets/shaders/') && asset.endsWith('.glsl'));
 
     int copiedFilesCount = 0;
+    int updatedFilesCount = 0;
 
     for (var filePath in shaderFiles) {
       final fileName = filePath.split('/').last;
       final targetFile = File(path.join(shadersDirectory.path, fileName));
-      if (await targetFile.exists()) {
-        KazumiLogger()
-            .i('ShaderManager: GLSL Shader exists, skip: ${targetFile.path}');
-        continue;
-      }
 
       try {
         final data = await rootBundle.load(filePath);
         final List<int> bytes = data.buffer.asUint8List();
-        await targetFile.writeAsBytes(bytes);
+
+        if (await targetFile.exists()) {
+          final existingBytes = await targetFile.readAsBytes();
+          if (existingBytes.length == bytes.length &&
+              sha256.convert(existingBytes) == sha256.convert(bytes)) {
+            continue;
+          }
+          await targetFile.writeAsBytes(bytes, flush: true);
+          updatedFilesCount++;
+          KazumiLogger().i('ShaderManager: Update: ${targetFile.path}');
+          continue;
+        }
+
+        await targetFile.writeAsBytes(bytes, flush: true);
         copiedFilesCount++;
         KazumiLogger().i('ShaderManager: Copy: ${targetFile.path}');
       } catch (e) {
@@ -46,6 +56,6 @@ class ShaderAssetService {
     }
 
     KazumiLogger().i(
-        'ShaderManager: $copiedFilesCount GLSL files copied to ${shadersDirectory.path}');
+        'ShaderManager: $copiedFilesCount copied, $updatedFilesCount updated in ${shadersDirectory.path}');
   }
 }

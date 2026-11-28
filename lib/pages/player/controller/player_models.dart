@@ -1,3 +1,4 @@
+import 'package:kazumi/modules/media/media_models.dart';
 import 'package:kazumi/services/player/hls_proxy_service.dart';
 import 'package:kazumi/services/video_source/video_source_format.dart';
 
@@ -10,6 +11,7 @@ class PlayerMediaInitParams {
     required this.httpHeaders,
     required this.adBlockerEnabled,
     required this.referer,
+    this.mediaKind = MediaKind.anime,
     this.videoSourceFormat = VideoSourceFormat.auto,
     this.coverUrl,
     this.playbackSpeed,
@@ -25,6 +27,7 @@ class PlayerMediaInitParams {
   final Map<String, String> httpHeaders;
   final bool adBlockerEnabled;
   final String referer;
+  final MediaKind mediaKind;
   final VideoSourceFormat videoSourceFormat;
   final String? coverUrl;
 

@@ -10,7 +10,9 @@ part of 'player_playback_controller.dart';
 
 mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
   late final _$superResolutionModeAtom = Atom(
-      name: '_PlayerPlaybackController.superResolutionMode', context: context);
+    name: '_PlayerPlaybackController.superResolutionMode',
+    context: context,
+  );
 
   @override
   SuperResolutionMode get superResolutionMode {
@@ -25,8 +27,32 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$volumeAtom =
-      Atom(name: '_PlayerPlaybackController.volume', context: context);
+  late final _$activeEnhancementSummaryAtom = Atom(
+    name: '_PlayerPlaybackController.activeEnhancementSummary',
+    context: context,
+  );
+
+  @override
+  String get activeEnhancementSummary {
+    _$activeEnhancementSummaryAtom.reportRead();
+    return super.activeEnhancementSummary;
+  }
+
+  @override
+  set activeEnhancementSummary(String value) {
+    _$activeEnhancementSummaryAtom.reportWrite(
+      value,
+      super.activeEnhancementSummary,
+      () {
+        super.activeEnhancementSummary = value;
+      },
+    );
+  }
+
+  late final _$volumeAtom = Atom(
+    name: '_PlayerPlaybackController.volume',
+    context: context,
+  );
 
   @override
   double get volume {
@@ -41,8 +67,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$loadingAtom =
-      Atom(name: '_PlayerPlaybackController.loading', context: context);
+  late final _$loadingAtom = Atom(
+    name: '_PlayerPlaybackController.loading',
+    context: context,
+  );
 
   @override
   bool get loading {
@@ -57,8 +85,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$playingAtom =
-      Atom(name: '_PlayerPlaybackController.playing', context: context);
+  late final _$playingAtom = Atom(
+    name: '_PlayerPlaybackController.playing',
+    context: context,
+  );
 
   @override
   bool get playing {
@@ -73,8 +103,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$isBufferingAtom =
-      Atom(name: '_PlayerPlaybackController.isBuffering', context: context);
+  late final _$isBufferingAtom = Atom(
+    name: '_PlayerPlaybackController.isBuffering',
+    context: context,
+  );
 
   @override
   bool get isBuffering {
@@ -89,8 +121,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$completedAtom =
-      Atom(name: '_PlayerPlaybackController.completed', context: context);
+  late final _$completedAtom = Atom(
+    name: '_PlayerPlaybackController.completed',
+    context: context,
+  );
 
   @override
   bool get completed {
@@ -105,8 +139,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$currentPositionAtom =
-      Atom(name: '_PlayerPlaybackController.currentPosition', context: context);
+  late final _$currentPositionAtom = Atom(
+    name: '_PlayerPlaybackController.currentPosition',
+    context: context,
+  );
 
   @override
   Duration get currentPosition {
@@ -121,8 +157,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$bufferAtom =
-      Atom(name: '_PlayerPlaybackController.buffer', context: context);
+  late final _$bufferAtom = Atom(
+    name: '_PlayerPlaybackController.buffer',
+    context: context,
+  );
 
   @override
   Duration get buffer {
@@ -137,8 +175,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$durationAtom =
-      Atom(name: '_PlayerPlaybackController.duration', context: context);
+  late final _$durationAtom = Atom(
+    name: '_PlayerPlaybackController.duration',
+    context: context,
+  );
 
   @override
   Duration get duration {
@@ -153,8 +193,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$playerSpeedAtom =
-      Atom(name: '_PlayerPlaybackController.playerSpeed', context: context);
+  late final _$playerSpeedAtom = Atom(
+    name: '_PlayerPlaybackController.playerSpeed',
+    context: context,
+  );
 
   @override
   double get playerSpeed {
@@ -169,8 +211,10 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
     });
   }
 
-  late final _$_PlayerPlaybackControllerActionController =
-      ActionController(name: '_PlayerPlaybackController', context: context);
+  late final _$_PlayerPlaybackControllerActionController = ActionController(
+    name: '_PlayerPlaybackController',
+    context: context,
+  );
 
   @override
   void resetForInit() {
@@ -220,6 +264,7 @@ mixin _$PlayerPlaybackController on _PlayerPlaybackController, Store {
   String toString() {
     return '''
 superResolutionMode: ${superResolutionMode},
+activeEnhancementSummary: ${activeEnhancementSummary},
 volume: ${volume},
 loading: ${loading},
 playing: ${playing},

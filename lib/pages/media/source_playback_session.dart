@@ -1068,6 +1068,7 @@ class SourcePlaybackSession extends PlayerPresentationContext
             httpHeaders: headers,
             adBlockerEnabled: plugin.adBlocker,
             referer: referer,
+            mediaKind: _activeMedia.ref.kind,
             videoSourceFormat: format,
             coverUrl: artworkUrl,
             playbackSpeed: speed,

@@ -209,6 +209,7 @@ class PlayerControlsController implements Disposable {
         params.adBlockerEnabled,
         canInstall: isCurrent,
         offset: params.offset,
+        mediaKind: params.mediaKind,
         videoSourceFormat: params.videoSourceFormat,
         honorPlatformDecoderFallback: honorPlatformDecoderFallback,
         hlsPreFetchedSeed: params.hlsPreFetchedSeed,
@@ -298,6 +299,9 @@ class PlayerControlsController implements Disposable {
     }
     await playback.setShader(mode, player: currentPlayer);
   }
+
+  void updateViewportPhysicalSize(int width, int height) =>
+      playback.updateViewportPhysicalSize(width, height);
 
   Future<void> setPlaybackSpeed(double speed) async {
     if (!interactionsEnabled) return;
