@@ -455,3 +455,91 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               "${extra_flags[@]}"
           fi
+
+  sync-gitee-release:
+    needs: [validate, publish-release]
+    if: ${{ needs.validate.outputs.is_draft != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GITEE_OWNER: ${{ vars.GITEE_OWNER || 'ZoomEnterprise' }}
+      GITEE_REPO: ${{ vars.GITEE_REPO || 'kazumi-plus' }}
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.validate.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard and sync release tag to Gitee
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" == 'Predidit/Kazumi' ]]; then
+            echo 'Plus Gitee release sync cannot run against the upstream repository.' >&2
+            exit 1
+          fi
+          if [[ -z "${GITEE_TOKEN:-}" ]]; then
+            echo 'Missing GITEE_TOKEN secret. Configure GITEE_TOKEN with Gitee personal access token (projects scope).' >&2
+            exit 1
+          fi
+
+          askpass="$(mktemp)"
+          trap 'rm -f "$askpass"' EXIT
+          cat <<'EOF' > "$askpass"
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' 'oauth2' ;;
+            *Password*) printf '%s\n' "$GITEE_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+
+          gitee_url="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_ASKPASS="$askpass"
+          git push --force "$gitee_url" "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+
+      - name: Download published GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets --clobber
+          ls -lh release-assets
+
+      - name: Sync Release and assets to Gitee
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          NOTES_PATH: ${{ needs.validate.outputs.notes_path }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          target_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          python3 scripts/sync_gitee_release.py \
+            --owner "$GITEE_OWNER" \
+            --repo "$GITEE_REPO" \
+            --tag "$RELEASE_TAG" \
+            --title "Kazumi Plus $RELEASE_TAG" \
+            --notes-file "$NOTES_PATH" \
+            --target-commitish "$target_sha" \
+            --prerelease "$IS_PRERELEASE" \
+            --assets-dir release-assets
+          {
+            echo "### Gitee Release 同步完成"
+            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- URL: https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/tag/${RELEASE_TAG}"
+            echo "- 同步附件:"
+            ls -1 release-assets | sed 's/^/  - /'
+          } >> "$GITHUB_STEP_SUMMARY"
