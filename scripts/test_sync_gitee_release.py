@@ -29,6 +29,7 @@ class MockGiteeState:
         self.attachments: dict[int, list[dict[str, object]]] = {}
         self.requests: list[tuple[str, str, dict[str, object] | None]] = []
         self.force_500_with_token = False
+        self.reject_non_tag_commitish = False
 
 
 def make_handler(state: MockGiteeState):
@@ -101,6 +102,12 @@ def make_handler(state: MockGiteeState):
                     return
                 payload = json.loads(raw.decode("utf-8"))
                 state.requests.append(("POST", parsed.path, payload))
+                if (
+                    state.reject_non_tag_commitish
+                    and payload.get("target_commitish") != payload.get("tag_name")
+                ):
+                    self._send_json(404, {"message": "Not Found commitish"})
+                    return
                 rel_id = state.next_release_id
                 state.next_release_id += 1
                 record = {
@@ -352,6 +359,32 @@ class SyncGiteeReleaseTest(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertNotIn(self.token, msg)
         self.assertIn("***", msg)
+
+    def test_create_release_falls_back_to_tag_when_commit_sha_rejected(self) -> None:
+        self.state.reject_non_tag_commitish = True
+        with mock.patch.dict(os.environ, {"GITEE_TOKEN": self.token}, clear=False):
+            result = sgr.sync_release(
+                owner="ZoomEnterprise",
+                repo="kazumi-plus",
+                tag="v0.2.5",
+                title="Kazumi Plus v0.2.5",
+                notes_file=None,
+                body="Release notes",
+                target_commitish="0123456789abcdef0123456789abcdef01234567",
+                prerelease=False,
+                assets_dir=None,
+                api_base=self.api_base,
+            )
+
+        self.assertEqual(result.action, "created")
+        self.assertEqual(self.state.releases[result.release_id]["target_commitish"], "v0.2.5")
+        post_reqs = [r for r in self.state.requests if r[0] == "POST"]
+        self.assertEqual(len(post_reqs), 2)
+        self.assertEqual(
+            post_reqs[0][2]["target_commitish"],
+            "0123456789abcdef0123456789abcdef01234567",
+        )
+        self.assertEqual(post_reqs[1][2]["target_commitish"], "v0.2.5")
 
 
 if __name__ == "__main__":

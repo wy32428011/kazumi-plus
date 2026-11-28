@@ -467,11 +467,11 @@ jobs:
       GITEE_OWNER: ${{ vars.GITEE_OWNER || 'ZoomEnterprise' }}
       GITEE_REPO: ${{ vars.GITEE_REPO || 'kazumi-plus' }}
     steps:
-      - name: Checkout exact release tag
+      - name: Checkout workflow scripts and tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ needs.validate.outputs.tag }}
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - name: Guard and sync release tag to Gitee
@@ -489,6 +489,7 @@ jobs:
             echo 'Missing GITEE_TOKEN secret. Configure GITEE_TOKEN with Gitee personal access token (projects scope).' >&2
             exit 1
           fi
+          git rev-parse --verify "refs/tags/${RELEASE_TAG}" >/dev/null
 
           askpass="$(mktemp)"
           trap 'rm -f "$askpass"' EXIT
@@ -527,12 +528,13 @@ jobs:
         run: |
           set -euo pipefail
           target_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          git show "refs/tags/${RELEASE_TAG}:${NOTES_PATH}" > release-notes.md
           python3 scripts/sync_gitee_release.py \
             --owner "$GITEE_OWNER" \
             --repo "$GITEE_REPO" \
             --tag "$RELEASE_TAG" \
             --title "Kazumi Plus $RELEASE_TAG" \
-            --notes-file "$NOTES_PATH" \
+            --notes-file release-notes.md \
             --target-commitish "$target_sha" \
             --prerelease "$IS_PRERELEASE" \
             --assets-dir release-assets

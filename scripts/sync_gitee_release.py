@@ -152,7 +152,15 @@ def upsert_release(
         "target_commitish": target_commitish,
         "prerelease": prerelease,
     }
-    created = api_request("POST", releases_url, token, create_payload)
+    try:
+        created = api_request("POST", releases_url, token, create_payload)
+    except GiteeApiError as exc:
+        if exc.status_code in {400, 404, 422} and target_commitish != tag:
+            fallback_payload = dict(create_payload)
+            fallback_payload["target_commitish"] = tag
+            created = api_request("POST", releases_url, token, fallback_payload)
+        else:
+            raise
     if not isinstance(created, dict) or not isinstance(created.get("id"), int):
         raise RuntimeError(f"Unexpected Gitee create release response: {created!r}")
     return created["id"], "created"
