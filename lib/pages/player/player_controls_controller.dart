@@ -300,6 +300,11 @@ class PlayerControlsController implements Disposable {
     await playback.setShader(mode, player: currentPlayer);
   }
 
+  Future<void> refreshSuperResolution() async {
+    if (!interactionsEnabled) return;
+    await playback.refreshSuperResolution();
+  }
+
   void updateViewportPhysicalSize(int width, int height) =>
       playback.updateViewportPhysicalSize(width, height);
 

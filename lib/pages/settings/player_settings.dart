@@ -6,6 +6,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 import 'package:kazumi/pages/player/controller/player_aspect_ratio.dart';
+import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
 import 'package:kazumi/pages/settings/low_memory_mode_settings.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -28,6 +29,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   late double defaultPlaySpeed;
   late double defaultShortcutForwardPlaySpeed;
   late PlayerAspectRatio defaultAspectRatioMode;
+  late SuperResolutionMode defaultSuperResolutionMode;
   late bool hAenable;
   late bool androidEnableOpenSLES;
   late bool androidAutoEnterPIP;
@@ -58,6 +60,9 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
         SettingsKeys.defaultShortcutForwardPlaySpeed);
     defaultAspectRatioMode = PlayerAspectRatio.fromStorageValue(
       GStorage.getSetting<int>(SettingsKeys.defaultAspectRatioType),
+    );
+    defaultSuperResolutionMode = SuperResolutionMode.fromStorageValue(
+      GStorage.getSetting<int>(SettingsKeys.defaultSuperResolutionMode),
     );
     hAenable = GStorage.getSetting<bool>(SettingsKeys.hAenable);
     androidEnableOpenSLES =
@@ -294,11 +299,17 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 ),
               ],
               SettingsTile(
-                leading: Icons.auto_awesome_rounded,
+                leading: Icons.four_k_rounded,
                 onPressed: (_) async {
-                  context.pushNamed('/settings/player/super');
+                  await context.pushNamed('/settings/player/super');
+                  if (mounted) {
+                    setState(_loadSettingsFromStorage);
+                  }
                 },
-                title: Text('超分辨率'),
+                title: Text('4K 超分辨率与画质增强'),
+                description: Text(
+                  '当前：${defaultSuperResolutionMode.label} · 可将 1080P 实时超分至 4K',
+                ),
               ),
             ],
           ),

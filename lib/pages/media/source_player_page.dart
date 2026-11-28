@@ -293,6 +293,7 @@ class _SourcePlayerPageState extends State<SourcePlayerPage>
         final sourcePanel = PlayerSourceQualityPanel(
           controller: _session.controls.quality,
           sourceFeatures: _session,
+          controlsController: _session.controls,
           embedded: true,
         );
         final panel = ColoredBox(
@@ -438,6 +439,7 @@ class _SourcePlayerPageState extends State<SourcePlayerPage>
                                 context,
                                 _session.controls.quality,
                                 sourceFeatures: _session,
+                                controlsController: _session.controls,
                               ),
                             ),
                             icon: const Icon(Icons.swap_horiz_rounded),

@@ -14,6 +14,7 @@ class SuperResolutionSettings extends StatefulWidget {
 
 class _SuperResolutionSettingsState extends State<SuperResolutionSettings> {
   late bool disableWarning;
+  late bool sharpenEnabled;
   late bool debandEnabled;
   late bool upscaleOutputEnabled;
   late bool autoDowngradeEnabled;
@@ -25,6 +26,9 @@ class _SuperResolutionSettingsState extends State<SuperResolutionSettings> {
     super.initState();
     disableWarning = GStorage.getSetting<bool>(
       SettingsKeys.disableSuperResolutionWarning,
+    );
+    sharpenEnabled = GStorage.getSetting<bool>(
+      SettingsKeys.superResolutionSharpenEnabled,
     );
     debandEnabled = GStorage.getSetting<bool>(
       SettingsKeys.superResolutionDebandEnabled,
@@ -46,12 +50,12 @@ class _SuperResolutionSettingsState extends State<SuperResolutionSettings> {
   @override
   Widget build(BuildContext context) {
     return SettingsDetailScaffold(
-      title: const Text('超分辨率与画质增强'),
+      title: const Text('4K 超分辨率与画质增强'),
       body: SettingsList(
         sections: [
           SettingsRadioSection<SuperResolutionMode>(
             title: Text(
-              '超分辨率需要启用硬件解码；Android 如开启后不生效，请在播放设置中将视频渲染器切换为 gpu 或 gpu-next',
+              '在播放界面点击「4K超分」按钮可实时切换并查看前后对比；Android 如不生效请在播放设置中将视频渲染器切换为 gpu 或 gpu-next',
             ),
             groupValue: superResolutionMode,
             onChanged: (SuperResolutionMode? value) {
@@ -99,6 +103,20 @@ class _SuperResolutionSettingsState extends State<SuperResolutionSettings> {
             title: Text('画质与性能保护'),
             tiles: [
               SettingsTile.switchTile(
+                leading: Icons.auto_fix_high_rounded,
+                title: Text('细节锐化增强（Adaptive Sharpen）'),
+                description: Text('超分放大后强化边缘与纹理清晰度，对电视剧与电影观感提升最明显'),
+                initialValue: sharpenEnabled,
+                onToggle: (value) async {
+                  sharpenEnabled = value ?? !sharpenEnabled;
+                  await GStorage.putSetting<bool>(
+                    SettingsKeys.superResolutionSharpenEnabled,
+                    sharpenEnabled,
+                  );
+                  if (mounted) setState(() {});
+                },
+              ),
+              SettingsTile.switchTile(
                 leading: Icons.gradient_rounded,
                 title: Text('自动去色带（Deband）'),
                 description: Text('启用超分时同步减轻低码率片源暗场色块与断层'),
@@ -114,8 +132,8 @@ class _SuperResolutionSettingsState extends State<SuperResolutionSettings> {
               ),
               SettingsTile.switchTile(
                 leading: Icons.hd_rounded,
-                title: Text('4K 高清纹理输出'),
-                description: Text('高分屏下按片源比例将输出画面提升至最高 4K（片源已达 4K 时自动跳过）'),
+                title: Text('强制 4K 渲染输出（最高 3840×2160）'),
+                description: Text('窗口模式及 1080P/2K/4K 屏幕均以 4K 超采样输出（片源已达 4K 时自动跳过）'),
                 initialValue: upscaleOutputEnabled,
                 onToggle: (value) async {
                   upscaleOutputEnabled = value ?? !upscaleOutputEnabled;

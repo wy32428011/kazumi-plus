@@ -1,8 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:kazumi/modules/media/work_cluster_models.dart';
+import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
+import 'package:kazumi/pages/player/player_controls_controller.dart';
 import 'package:kazumi/pages/player/player_presentation_context.dart';
+import 'package:kazumi/pages/player/player_super_resolution_sheet.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
 import 'package:kazumi/services/player/playback_quality.dart';
 import 'package:kazumi/television/tv_focus.dart';
@@ -32,6 +36,8 @@ Future<void> showPlayerQualitySheet(
   BuildContext context,
   PlaybackQualityController controller, {
   PlayerSourceSwitchingFeatures? sourceFeatures,
+  PlayerControlsController? controlsController,
+  Future<void> Function(SuperResolutionMode mode)? onSuperResolutionSelected,
 }) {
   final size = MediaQuery.sizeOf(context);
   final isTv = PlatformEnvironmentService.isTelevision;
@@ -60,6 +66,8 @@ Future<void> showPlayerQualitySheet(
                 child: PlayerSourceQualityPanel(
                   controller: controller,
                   sourceFeatures: sourceFeatures,
+                  controlsController: controlsController,
+                  onSuperResolutionSelected: onSuperResolutionSelected,
                   onClose: () => Navigator.of(dialogContext).pop(),
                 ),
               ),
@@ -98,6 +106,8 @@ Future<void> showPlayerQualitySheet(
       child: PlayerSourceQualityPanel(
         controller: controller,
         sourceFeatures: sourceFeatures,
+        controlsController: controlsController,
+        onSuperResolutionSelected: onSuperResolutionSelected,
         showDragHandle: true,
         onClose: () => Navigator.of(sheetContext).pop(),
       ),
@@ -111,10 +121,15 @@ class PlayerQualityDialog extends StatelessWidget {
     super.key,
     required this.controller,
     this.sourceFeatures,
+    this.controlsController,
+    this.onSuperResolutionSelected,
   });
 
   final PlaybackQualityController controller;
   final PlayerSourceSwitchingFeatures? sourceFeatures;
+  final PlayerControlsController? controlsController;
+  final Future<void> Function(SuperResolutionMode mode)?
+      onSuperResolutionSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +144,8 @@ class PlayerQualityDialog extends StatelessWidget {
         child: PlayerSourceQualityPanel(
           controller: controller,
           sourceFeatures: sourceFeatures,
+          controlsController: controlsController,
+          onSuperResolutionSelected: onSuperResolutionSelected,
           onClose: () => Navigator.of(context).pop(),
         ),
       ),
@@ -142,6 +159,8 @@ class PlayerSourceQualityPanel extends StatelessWidget {
     super.key,
     required this.controller,
     this.sourceFeatures,
+    this.controlsController,
+    this.onSuperResolutionSelected,
     this.showDragHandle = false,
     this.onClose,
     this.embedded = false,
@@ -149,6 +168,9 @@ class PlayerSourceQualityPanel extends StatelessWidget {
 
   final PlaybackQualityController controller;
   final PlayerSourceSwitchingFeatures? sourceFeatures;
+  final PlayerControlsController? controlsController;
+  final Future<void> Function(SuperResolutionMode mode)?
+      onSuperResolutionSelected;
   final bool showDragHandle;
   final VoidCallback? onClose;
   final bool embedded;
@@ -204,6 +226,13 @@ class PlayerSourceQualityPanel extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                     children: [
                       _buildTelemetryCard(features),
+                      if (controlsController != null) ...[
+                        const SizedBox(height: 12),
+                        _buildSuperResolutionCard(
+                          context,
+                          controlsController!,
+                        ),
+                      ],
                       if (features != null) ...[
                         const SizedBox(height: 12),
                         _buildStrategyBar(features),
@@ -396,6 +425,115 @@ class PlayerSourceQualityPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSuperResolutionCard(
+    BuildContext context,
+    PlayerControlsController controls,
+  ) {
+    final selectHandler =
+        onSuperResolutionSelected ?? (mode) => controls.setShader(mode);
+    return Observer(
+      builder: (context) {
+        final activeMode = controls.playback.superResolutionMode;
+        final summary = controls.playback.activeEnhancementSummary;
+        final outW = controls.debug.outputWidth;
+        final outH = controls.debug.outputHeight;
+        final isActive = activeMode != SuperResolutionMode.off;
+        final statusText = !isActive
+            ? '未开启'
+            : (outW > 0 && outH > 0 ? '$summary · $outW×$outH' : summary);
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _DarkroomPalette.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isActive
+                  ? _DarkroomPalette.tungsten.withValues(alpha: 0.5)
+                  : _DarkroomPalette.hairline,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.four_k_rounded,
+                    size: 18,
+                    color: _DarkroomPalette.tungsten,
+                  ),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text(
+                      '本地 4K 超分增强',
+                      style: TextStyle(
+                        color: _DarkroomPalette.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: _DarkroomPalette.tungsten,
+                    ),
+                    onPressed: () => unawaited(
+                      showPlayerSuperResolutionSheet(
+                        context,
+                        playerController: controls,
+                        onSelectMode: selectHandler,
+                      ),
+                    ),
+                    child: const Text(
+                      '详细设置',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                statusText,
+                style: TextStyle(
+                  color: isActive
+                      ? _DarkroomPalette.tungsten
+                      : _DarkroomPalette.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  for (var i = 0; i < SuperResolutionMode.values.length; i++)
+                    ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: _SuperResolutionSegmentButton(
+                          label: SuperResolutionMode.values[i].label,
+                          selected:
+                              activeMode == SuperResolutionMode.values[i],
+                          onTap: () => unawaited(
+                            selectHandler(SuperResolutionMode.values[i]),
+                          ),
+                        ),
+                      ),
+                    ],
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -998,6 +1136,56 @@ class _TagPill extends StatelessWidget {
           color: foreground,
           fontSize: 11,
           fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+class _SuperResolutionSegmentButton extends StatelessWidget {
+  const _SuperResolutionSegmentButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? _DarkroomPalette.tungstenTint
+          : _DarkroomPalette.surfaceElevated,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? _DarkroomPalette.tungsten
+                  : _DarkroomPalette.hairline,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: selected
+                  ? _DarkroomPalette.tungsten
+                  : _DarkroomPalette.textPrimary,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
         ),
       ),
     );

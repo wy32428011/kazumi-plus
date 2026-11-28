@@ -821,6 +821,10 @@ abstract class _PlayerPlaybackController with Store {
     });
   }
 
+  Future<void> refreshSuperResolution() async {
+    await setShader(superResolutionMode);
+  }
+
   Future<void> setShader(SuperResolutionMode mode, {Player? player}) async {
     final currentPlayer = player ?? mediaPlayer;
     if (currentPlayer == null) return;
@@ -834,12 +838,16 @@ abstract class _PlayerPlaybackController with Store {
       final upscaleOutputEnabled = GStorage.getSetting<bool>(
         SettingsKeys.superResolutionUpscaleOutput,
       );
+      final sharpenEnabled = GStorage.getSetting<bool>(
+        SettingsKeys.superResolutionSharpenEnabled,
+      );
       final plan = buildVideoEnhancementPlan(
         mode: mode,
         profile: profile,
         mediaKind: currentMediaKind,
         debandEnabled: debandEnabled,
         upscaleOutputEnabled: upscaleOutputEnabled,
+        sharpenEnabled: sharpenEnabled,
         isDesktop: isDesktop(),
         isTelevision: PlatformEnvironmentService.isTelevision,
         sourceWidth: _sourceWidth,

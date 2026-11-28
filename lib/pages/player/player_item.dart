@@ -1785,6 +1785,8 @@ class _PlayerItemState extends State<PlayerItem>
             context,
             playerController.quality,
             sourceFeatures: videoPageController.sourceSwitchingFeatures,
+            controlsController: playerController,
+            onSuperResolutionSelected: handleSuperResolutionChange,
           );
           if (mounted) {
             (widget.tvOverlay ?? _localTvOverlay).requestFocus();
@@ -1797,6 +1799,8 @@ class _PlayerItemState extends State<PlayerItem>
                 context,
                 playerController.quality,
                 sourceFeatures: videoPageController.sourceSwitchingFeatures,
+                controlsController: playerController,
+                onSuperResolutionSelected: handleSuperResolutionChange,
               );
               if (mounted) {
                 (widget.tvOverlay ?? _localTvOverlay).requestFocus();
@@ -1816,12 +1820,12 @@ class _PlayerItemState extends State<PlayerItem>
                   videoPageController.resumePending ||
                   videoPageController.errorMessage != null;
               return TvSelect<SuperResolutionMode>(
-                label: '超分',
+                label: '4K 超分',
                 value: playerController.playback.superResolutionMode,
                 options: const [
                   (SuperResolutionMode.off, '关闭'),
-                  (SuperResolutionMode.efficiency, '效率档'),
-                  (SuperResolutionMode.quality, '质量档'),
+                  (SuperResolutionMode.efficiency, '4K 效率档'),
+                  (SuperResolutionMode.quality, '4K 质量档'),
                 ],
                 onChanged: disabled
                     ? null

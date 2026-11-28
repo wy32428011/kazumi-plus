@@ -9,6 +9,7 @@ import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/play_pause_icon.dart';
 import 'package:kazumi/pages/player/player_adjustment_hud.dart';
 import 'package:kazumi/pages/player/player_quality_sheet.dart';
+import 'package:kazumi/pages/player/player_super_resolution_sheet.dart';
 import 'package:kazumi/pages/player/danmaku_destination_sheet.dart';
 import 'package:kazumi/pages/player/controller/player_aspect_ratio.dart';
 import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
@@ -622,11 +623,86 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         context,
         playerController.quality,
         sourceFeatures: videoPageController.sourceSwitchingFeatures,
+        controlsController: playerController,
+        onSuperResolutionSelected: widget.handleSuperResolutionChange,
       );
     } finally {
       hold.release();
       if (mounted) widget.onMenuVisibilityChanged(false);
     }
+  }
+
+  Future<void> _showSuperResolutionSheet() async {
+    final hold = widget.acquirePlayerPanelHold();
+    widget.onMenuVisibilityChanged(true);
+    try {
+      await showPlayerSuperResolutionSheet(
+        context,
+        playerController: playerController,
+        onSelectMode: widget.handleSuperResolutionChange,
+      );
+    } finally {
+      hold.release();
+      if (mounted) widget.onMenuVisibilityChanged(false);
+    }
+  }
+
+  Widget _buildSuperResolutionPill(
+    BuildContext context, {
+    required bool compact,
+  }) {
+    return Observer(
+      builder: (context) {
+        final mode = playerController.playback.superResolutionMode;
+        final isActive = mode != SuperResolutionMode.off;
+        final String label = switch (mode) {
+          SuperResolutionMode.off => '超分',
+          SuperResolutionMode.efficiency => compact ? '效率' : '效率档',
+          SuperResolutionMode.quality => compact ? '质量' : '质量档',
+        };
+        return Padding(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
+          child: InkWell(
+            onTap: _showSuperResolutionSheet,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 7 : 10,
+                vertical: compact ? 4 : 6,
+              ),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color(0xFFD8A85B)
+                    : const Color(0xCC191C22),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isActive ? const Color(0xFFD8A85B) : Colors.white54,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.four_k_rounded,
+                    size: compact ? 15 : 17,
+                    color: isActive ? Colors.black : Colors.white,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isActive ? Colors.black : Colors.white,
+                      fontSize: compact ? 11 : 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildSourceQualityButton() {
@@ -709,13 +785,6 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     onSelected: widget.setPlaybackSpeed,
   );
 
-  List<Widget> get _superResolutionItems => _choiceItems(
-    SuperResolutionMode.values,
-    label: (value) => value.label,
-    selected: (value) => value == playerController.playback.superResolutionMode,
-    onSelected: widget.handleSuperResolutionChange,
-  );
-
   Widget _menuButton({
     required Widget child,
     required List<Widget> items,
@@ -783,18 +852,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
       ],
       if (!_desktop && _danmaku == null) const Spacer(),
       _buildSourceQualityButton(),
-      _menuButton(
-        child: Observer(
-          builder: (context) {
-            final summary = playerController.playback.activeEnhancementSummary;
-            return Text(
-              summary == '关闭' ? '超分辨率' : summary,
-              style: const TextStyle(color: Colors.white),
-            );
-          },
-        ),
-        items: _superResolutionItems,
-      ),
+      _buildSuperResolutionPill(context, compact: false),
       _menuButton(
         child: Text(
           playerController.playback.playerSpeed == 1
@@ -979,6 +1037,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     color: Colors.white,
                   ),
                 ),
+              if (compact) _buildSuperResolutionPill(context, compact: true),
               if (compact && _danmaku != null) _buildDanmakuToggleButton(context),
               videoPageController.buildCollectionButton(
                 context,
@@ -1011,17 +1070,13 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                       menuChildren: _speedItems,
                       child: const Text('倍速'),
                     ),
-                    SubmenuButton(
-                      menuChildren: _superResolutionItems,
-                      child: Observer(
-                        builder: (context) {
-                          final summary = playerController
-                              .playback
-                              .activeEnhancementSummary;
-                          return Text(
-                            summary == '关闭' ? '超分辨率' : '超分辨率 · $summary',
-                          );
-                        },
+                    Observer(
+                      builder: (context) => KazumiMenuItem(
+                        onPressed: _showSuperResolutionSheet,
+                        label: playerController.playback.superResolutionMode ==
+                                SuperResolutionMode.off
+                            ? '4K 超分增强'
+                            : '4K 超分 · ${playerController.playback.activeEnhancementSummary}',
                       ),
                     ),
                     if (_anime != null) _syncPlayMenuItem,

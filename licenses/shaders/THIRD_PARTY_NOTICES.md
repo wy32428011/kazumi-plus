@@ -39,3 +39,9 @@ Kazumi Plus bundles the following GLSL user shaders in `assets/shaders/` for rea
   - `ArtCNN_C4F32.glsl`
 - **Upstream**: https://github.com/Artoriuz/ArtCNN
 - **License**: MIT License
+
+## 6. Adaptive Sharpen (mpv port)
+- **File**: `adaptive-sharpen.glsl`
+- **Author**: bacondither (ported/maintained for mpv by igv)
+- **Source**: https://gist.github.com/igv/8a77e4eb8276753b54bb94c1c50c317e
+- **License**: Simplified BSD License (2-clause BSD License)

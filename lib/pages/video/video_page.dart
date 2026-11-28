@@ -515,6 +515,7 @@ class _VideoPageState extends State<VideoPage>
                                   playerController.controls.quality,
                                   sourceFeatures:
                                       _presentation.sourceSwitchingFeatures,
+                                  controlsController: playerController.controls,
                                 ),
                               ),
                             IconButton(

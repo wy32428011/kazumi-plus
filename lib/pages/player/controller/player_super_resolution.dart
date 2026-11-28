@@ -6,17 +6,17 @@ enum SuperResolutionMode {
   off(
     storageValue: 1,
     label: '关闭',
-    description: '默认禁用超分辨率',
+    description: '使用片源原始分辨率渲染',
   ),
   efficiency(
     storageValue: 2,
-    label: '效率档',
-    description: '效率优先：动漫使用轻量 Anime4K，影视使用 FSR + 去色带',
+    label: '4K 效率档',
+    description: '流畅推荐：影视使用 FSR + 细节锐化 + 去色带，动漫使用 Anime4K 提升至 4K',
   ),
   quality(
     storageValue: 3,
-    label: '质量档',
-    description: '质量优先：动漫使用 ArtCNN，影视使用 FSRCNNX + 去色带',
+    label: '4K 质量档',
+    description: '极致清晰：影视使用 FSRCNNX + 细节锐化 + 色度增强，动漫使用高精度 Anime4K 提升至 4K',
   );
 
   const SuperResolutionMode({
@@ -46,7 +46,7 @@ enum SuperResolutionContentProfile {
   anime(
     storageValue: 1,
     label: '动漫优先',
-    description: '始终使用动漫线条增强模型（Anime4K / ArtCNN）',
+    description: '始终使用动漫线条增强模型（Anime4K）',
   ),
   liveAction(
     storageValue: 2,
@@ -90,7 +90,10 @@ ResolvedEnhancementContent resolveEnhancementContent(
   }
 }
 
-/// 根据源视频尺寸与当前物理视口尺寸计算超分目标输出尺寸（上限 3840、最多 2×，保持宽高比与偶数对齐）。
+/// 根据源视频尺寸与设备档位计算超分目标输出尺寸（上限 3840、最多 2×，保持宽高比与偶数对齐）。
+///
+/// 桌面端、Android TV 与质量档始终以 3840 长边为目标上限进行超分/4K 超采样，
+/// 确保即使在窗口模式或 1080P 显示器上也能触发 `OUTPUT / LUMA > 1.3` 的 GLSL 超分着色器。
 ({int width, int height})? computeTargetOutputSize({
   required SuperResolutionMode mode,
   required bool upscaleOutputEnabled,
@@ -98,15 +101,15 @@ ResolvedEnhancementContent resolveEnhancementContent(
   required int sourceHeight,
   required int viewportPhysicalWidth,
   required int viewportPhysicalHeight,
+  bool isDesktop = true,
+  bool isTelevision = false,
   String? videoRenderer,
 }) {
   if (mode == SuperResolutionMode.off ||
       !upscaleOutputEnabled ||
       videoRenderer == 'mediacodec_embed' ||
       sourceWidth <= 0 ||
-      sourceHeight <= 0 ||
-      viewportPhysicalWidth <= 0 ||
-      viewportPhysicalHeight <= 0) {
+      sourceHeight <= 0) {
     return null;
   }
 
@@ -115,8 +118,14 @@ ResolvedEnhancementContent resolveEnhancementContent(
     return null;
   }
 
-  final viewportLong = math.max(viewportPhysicalWidth, viewportPhysicalHeight);
-  final maxTargetLong = math.min(3840, viewportLong);
+  final int maxTargetLong;
+  if (isDesktop || isTelevision || mode == SuperResolutionMode.quality) {
+    maxTargetLong = 3840;
+  } else {
+    final viewportLong = math.max(viewportPhysicalWidth, viewportPhysicalHeight);
+    maxTargetLong = math.min(3840, math.max(2560, viewportLong));
+  }
+
   final scale = math.min(2.0, maxTargetLong / sourceLong);
   if (scale <= 1.05) {
     return null;
@@ -155,6 +164,7 @@ VideoEnhancementPlan buildVideoEnhancementPlan({
   required MediaKind mediaKind,
   required bool debandEnabled,
   required bool upscaleOutputEnabled,
+  bool sharpenEnabled = true,
   required bool isDesktop,
   required bool isTelevision,
   required int sourceWidth,
@@ -223,23 +233,38 @@ VideoEnhancementPlan buildVideoEnhancementPlan({
     case (ResolvedEnhancementContent.anime, SuperResolutionMode.efficiency):
       shaderFiles = const [
         'Anime4K_Clamp_Highlights.glsl',
-        'Anime4K_Restore_CNN_S.glsl',
-        'Anime4K_Upscale_CNN_x2_S.glsl',
+        'Anime4K_Restore_CNN_M.glsl',
+        'Anime4K_Upscale_CNN_x2_M.glsl',
       ];
-      activeSummary = '动漫·Anime4K';
+      activeSummary = '4K 动漫·效率';
     case (ResolvedEnhancementContent.anime, SuperResolutionMode.quality):
       shaderFiles = isDesktop
-          ? const ['ArtCNN_C4F32.glsl', 'KrigBilateral.glsl']
-          : const ['ArtCNN_C4F16.glsl', 'KrigBilateral.glsl'];
-      activeSummary = '动漫·ArtCNN';
+          ? const [
+              'Anime4K_Clamp_Highlights.glsl',
+              'Anime4K_Restore_CNN_VL.glsl',
+              'Anime4K_Upscale_CNN_x2_VL.glsl',
+              'KrigBilateral.glsl',
+            ]
+          : const [
+              'Anime4K_Clamp_Highlights.glsl',
+              'Anime4K_Restore_CNN_M.glsl',
+              'Anime4K_Upscale_CNN_x2_M.glsl',
+              'KrigBilateral.glsl',
+            ];
+      activeSummary = '4K 动漫·质量';
     case (ResolvedEnhancementContent.liveAction, SuperResolutionMode.efficiency):
-      shaderFiles = const ['FSR.glsl'];
-      activeSummary = '影视·FSR';
+      shaderFiles = [
+        'FSR.glsl',
+        if (sharpenEnabled) 'adaptive-sharpen.glsl',
+      ];
+      activeSummary = '4K 影视·效率';
     case (ResolvedEnhancementContent.liveAction, SuperResolutionMode.quality):
-      shaderFiles = isDesktop
-          ? const ['FSRCNNX_x2_16-0-4-1.glsl', 'KrigBilateral.glsl']
-          : const ['FSRCNNX_x2_8-0-4-1.glsl', 'KrigBilateral.glsl'];
-      activeSummary = '影视·FSRCNNX';
+      shaderFiles = [
+        isDesktop ? 'FSRCNNX_x2_16-0-4-1.glsl' : 'FSRCNNX_x2_8-0-4-1.glsl',
+        'KrigBilateral.glsl',
+        if (sharpenEnabled) 'adaptive-sharpen.glsl',
+      ];
+      activeSummary = '4K 影视·质量';
     case (_, SuperResolutionMode.off):
       shaderFiles = const [];
       activeSummary = '关闭';
@@ -253,7 +278,7 @@ VideoEnhancementPlan buildVideoEnhancementPlan({
         'deband-iterations': '1',
         'deband-threshold': '35',
         'deband-range': '16',
-        'deband-grain': '12',
+        'deband-grain': '6',
       },
       'scale': isTelevision ? 'bilinear' : 'spline36',
       'cscale': 'bilinear',
@@ -268,7 +293,7 @@ VideoEnhancementPlan buildVideoEnhancementPlan({
         'deband-iterations': isDesktop ? '2' : '1',
         'deband-threshold': '45',
         'deband-range': '16',
-        'deband-grain': '20',
+        'deband-grain': '8',
       },
       'scale': isDesktop ? 'ewa_lanczos' : 'spline36',
       'cscale': 'mitchell',
@@ -285,6 +310,8 @@ VideoEnhancementPlan buildVideoEnhancementPlan({
     sourceHeight: sourceHeight,
     viewportPhysicalWidth: viewportPhysicalWidth,
     viewportPhysicalHeight: viewportPhysicalHeight,
+    isDesktop: isDesktop,
+    isTelevision: isTelevision,
     videoRenderer: videoRenderer,
   );
 

@@ -435,6 +435,11 @@ class SettingsKeys {
     true,
     group: SettingGroup.player,
   );
+  static const superResolutionSharpenEnabled = SettingKey<bool>(
+    'superResolutionSharpenEnabled',
+    true,
+    group: SettingGroup.player,
+  );
   static const playerDisableAnimations = SettingKey<bool>(
     _SettingBoxKey.playerDisableAnimations,
     false,
@@ -693,6 +698,7 @@ class SettingsKeys {
     superResolutionDebandEnabled,
     superResolutionUpscaleOutput,
     superResolutionAutoDowngrade,
+    superResolutionSharpenEnabled,
     playerDisableAnimations,
     playerLogLevel,
     timelineNotShowAbandonedBangumis,
